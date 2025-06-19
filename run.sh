@@ -66,20 +66,6 @@ adb disconnect $adb_server
 
 # =========================Above is the Termux keep-alive script===============================
 
-# Start sshd
-if ! command -v sshd > /dev/null; then
-    echo -e "\nInstalling openssh ..."
-    pkg install openssh -y
-    (echo "123456"; echo "123456") | passwd
-    echo -e "openssh installed successfully. Initial SSH password is 123456. To change it, run the command: passwd.\n"
-fi
-if pgrep -x sshd > /dev/null; then
-    echo "sshd is running."
-else
-    echo "Starting sshd ..."
-    sshd
-fi
-
 # Run all scripts in the boot directory
 script_dir="$home/scripts"
 for script in "$script_dir"/*.sh; do
