@@ -13,7 +13,7 @@ pkg install -y jq
 
 # Boot dir is an part of Termux:Boot init 
 mkdir -p "$BOOT_DIR"
-curl -o "$BOOT_DIR/run.sh" "$BASE_URL/run.sh"
+curl -sL -o "$BOOT_DIR/run.sh" "$BASE_URL/run.sh"
 chmod +x "$BOOT_DIR/run.sh"
 
 # Download our scripts
