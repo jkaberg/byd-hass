@@ -4,6 +4,8 @@ Export your BYD car data to Home Assistant
 ## Disclaimer
 This is made available with best intentions, however you're solely responsible for whatever happends (good or bad). The author of this repository takes no reponsibility. 
 
+## What is this?
+This is an set of scripts to export information/data from your BYD car to Home Assistant. These data are made available through the app Diplus, for more context/information [see this Github issue](https://github.com/jkaberg/byd-react-app-reverse/issues/2)
 
 ## Installation
 
@@ -13,3 +15,9 @@ This is made available with best intentions, however you're solely responsible f
 - Modify the file `poll_diplus_nohup.sh` and the *Home Assistant config* section
 
 Hopefully if I remembered everything, you should now be all set and good to go!
+
+## TODO
+
+- [ ] Verify that the project always runs at boot (eg when the car is powered on)
+- [ ] Run the solution when the car is not running (How does Diplus do it?)
+- [ ] Support more sensors
