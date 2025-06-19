@@ -18,9 +18,12 @@ chmod +x "$BOOT_DIR/run.sh"
 
 # Download our scripts
 mkdir -p "$SCRIPTS_DIR"
-curl -sL -o "$SCRIPTS_DIR/poll_diplus_nohup.sh" "$BASE_URL/scripts/poll_diplus_nohup.sh"
-curl -sL -o "$SCRIPTS_DIR/keep_alive_nohup.sh" "$BASE_URL/scripts/keep_alive_nohup.sh"
 
-chmod +x $SCRIPTS_DIR/*
+scripts=("poll_diplus_nohup.sh" "keep_alive_nohup.sh")
+
+for script in "${scripts[@]}"; do
+  curl -sL -o "$SCRIPTS_DIR/$script" "$BASE_URL/scripts/$script"
+  chmod +x "$SCRIPTS_DIR/$script"
+done
 
 bash $BOOT_DIR/run.sh
