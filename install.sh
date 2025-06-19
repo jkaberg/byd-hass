@@ -21,4 +21,6 @@ mkdir -p "$SCRIPTS_DIR"
 curl -sL -o "$SCRIPTS_DIR/poll_diplus_nohup.sh" "$BASE_URL/scripts/poll_diplus_nohup.sh"
 curl -sL -o "$SCRIPTS_DIR/keep_alive_nohup.sh" "$BASE_URL/scripts/keep_alive_nohup.sh"
 
-chmod +x "$SCRIPTS_DIR/*"
+chmod +x $SCRIPTS_DIR/*
+
+bash $BOOT_DIR/run.sh
