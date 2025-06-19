@@ -3,9 +3,6 @@
 # Ensure device stays awake
 termux-wake-lock
 
-# Optional param passed to script
-param="$1"
-
 # Base directories
 HOME="/data/data/com.termux/files/home"
 SCRIPTS_DIR="$HOME/scripts"
