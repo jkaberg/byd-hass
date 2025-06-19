@@ -18,8 +18,19 @@ API_BASE_URL="http://localhost:8988/api/getDiPars"
 TEXT_TEMPLATE="soc:{电量百分比}|mileage:{里程}|lock:{远程锁车状态}|"
 
 ###  Home Assistant config ###
-HA_BASE_URL="https://HASS-URL"
-HA_TOKEN="LONG-LIVED-ACCESS-TOKEN"
+HASS_CONFIG_FILE="$(dirname "$0")/hass_config"
+
+if [[ ! -f "$HASS_CONFIG_FILE" ]]; then
+  echo "❌ Config file 'hass_config' not found in script directory. Exiting."
+  exit 1
+fi
+
+source "$HASS_CONFIG_FILE"
+
+if [[ -z "$HA_BASE_URL" || -z "$HA_TOKEN" ]]; then
+  echo "❌ HA_BASE_URL or HA_TOKEN not set in 'hass_config'. Exiting."
+  exit 1
+fi
 ###  Home Assistant config ###
 
 # Sensor prefix used in HASS
