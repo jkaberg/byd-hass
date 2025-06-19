@@ -7,7 +7,7 @@ SCRIPTS_DIR="$HOME/scripts"
 BASE_URL="https://raw.githubusercontent.com/jkaberg/byd-hass/refs/heads/main/"
 
 # Install required packages
-pkg install -y jq android-tools
+pkg install -y jq
 
 ### Setup the environment ###
 
