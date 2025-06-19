@@ -1,5 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
+
+# Exit if we're running already
+pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
+
 # ================================
 # Configuration
 # ================================
@@ -13,9 +17,10 @@ API_BASE_URL="http://localhost:8988/api/getDiPars"
 # The chinese text is an reference, see API SPEC.
 TEXT_TEMPLATE="soc:{电量百分比}|mileage:{里程}|lock:{远程锁车状态}|"
 
-# Home Assistant config
+###  Home Assistant config ###
 HA_BASE_URL="https://HASS-URL"
 HA_TOKEN="LONG-LIVED-ACCESS-TOKEN"
+###  Home Assistant config ###
 
 # Sensor prefix used in HASS
 HA_SENSOR_PREFIX="byd_car_"

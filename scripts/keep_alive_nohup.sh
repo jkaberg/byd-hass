@@ -1,5 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
+# Exit if we're running already
+pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
+
 # Log file
 log_file="/data/data/com.termux/files/home/scripts/keep_alive.log"
 
