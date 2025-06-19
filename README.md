@@ -16,6 +16,11 @@ This is an set of scripts to export information/data from your BYD car to Home A
 
 Hopefully if I remembered everything, you should now be all set and good to go!
 
+## Features
+- Readonly integration with Diplus
+- Caches data and transmits only on changes (saves bandwith)
+- Customizeble (in terms of which sensor data is consumed and transmitted)
+
 ## TODO
 
 - [ ] Verify that the project always runs at boot (eg when the car is powered on)
