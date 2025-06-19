@@ -32,5 +32,11 @@ fi
 
 # Optionally return to home screen
 if [ "$param" != "install" ]; then
-    input keyevent KEYCODE_HOME
+    ADB_SERVER="localhost:5555"
+    adb connect $ADB_SERVER > /dev/null
+    
+    sleep 2
+    adb -s $ADB_SERVER shell "input keyevent KEYCODE_HOME" > /dev/null # Return to home screen
+
+    adb disconnect $ADB_SERVER > /dev/null
 fi
