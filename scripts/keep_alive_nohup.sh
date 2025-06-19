@@ -4,9 +4,7 @@
 pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
 
 # Log file
-log_file="/data/data/com.termux/files/home/scripts/keep_alive.log"
-
-echo "$(date +'%F %T') Starting keep-alive loop ..." >> "$log_file"
+echo "$(date +'%F %T') Starting keep-alive loop ..."
 
 while true; do
     # Ensure Termux stays in foreground (optional)
