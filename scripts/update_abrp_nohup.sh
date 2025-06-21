@@ -78,6 +78,8 @@ send_to_abrp() {
       is_charging: ($charging|tonumber)
     }')
 
+  # API Docs: https://documenter.getpostman.com/view/7396339/SWTK5a8w#fdb20525-51da-4195-8138-54deabe907d5
+
   curl -s -X POST \
     "https://api.iternio.com/1/tlm/send?api_key=$ABRP_API_KEY&token=$ABRP_USER_TOKEN&tlm=$(jq -sRr @uri <<< "$payload")" \
     -o /dev/null
