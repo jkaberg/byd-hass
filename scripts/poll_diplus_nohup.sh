@@ -110,6 +110,7 @@ process_response() {
   done
 }
 
+# Ideally(??) we'd get this from Diplus
 fetch_location() {
   location_json=$(termux-location --provider gps --request single --timeout 10)
 
@@ -158,10 +159,8 @@ while true; do
     log "❌ Failed to fetch data"
   fi
 
+  # Fetch location from Termux:API
   fetch_location
-
-  log "📤 Sending cached values to Home Assistant..."
-  "$SCRIPT_DIR/update_ha_cache_to_home_assistant.sh"
 
   log "⏳ Waiting 60 seconds..."
   sleep 60
