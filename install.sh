@@ -19,7 +19,7 @@ chmod +x "$BOOT_DIR/run.sh"
 # Download our scripts
 mkdir -p "$SCRIPTS_DIR"
 
-scripts=("poll_diplus_nohup.sh" "keep_alive_nohup.sh")
+scripts=("poll_diplus_nohup.sh" "keep_alive_nohup.sh" "update_hass_nohup.sh")
 
 for script in "${scripts[@]}"; do
   curl -sL -o "$SCRIPTS_DIR/$script" "$BASE_URL/scripts/$script"

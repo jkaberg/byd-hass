@@ -30,6 +30,8 @@ HA_TOKEN="LONG-LIVED-ACCESS-TOKEN"
 - State of charge (Diplus)
 - Mileage (Diplus)
 - Lock state (Diplus)
+- Speed (Diplus)
+- Charge gun state (Diplus)
 - Position (Termux:API)
 
 ## TODO
