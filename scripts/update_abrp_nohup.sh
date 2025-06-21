@@ -1,13 +1,17 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
+# Exit if we're running already
+pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
+
 # ================================
 # Configuration
 # ================================
 
 SCRIPT_DIR="$(dirname "$0")"
 ABRP_CONFIG_FILE="$SCRIPT_DIR/abrp_config"
-CACHE_DIR="/data/data/com.termux/files/home/scripts/ha_cache"
+CACHE_DIR="$SCRIPT_DIR/ha_cache"
 POLL_INTERVAL=60  # seconds
+ABRP_PACKAGE_NAME="com.iternio.abrpapp"
 
 # Sensors to send to ABRP
 ABRP_SENSORS=(
@@ -81,6 +85,11 @@ send_to_abrp() {
   log "✅ Sent to ABRP: soc=$soc, lat=$lat, lon=$lon, speed=$speed, charging=$charging"
 }
 
+is_abrp_running() {
+  # Check if the ABRP app process is running
+  pidof "$ABRP_PACKAGE_NAME" > /dev/null 2>&1 || pgrep -f "$ABRP_PACKAGE_NAME" > /dev/null 2>&1
+}
+
 # ================================
 # Main Loop
 # ================================
@@ -100,6 +109,12 @@ while true; do
   # Skip if soc is missing or invalid
   if ! [[ "$soc" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
     log "⚠️ Invalid or missing SoC: '$soc', skipping..."
+    sleep "$POLL_INTERVAL"
+    continue
+  fi
+
+  if ! is_abrp_running; then
+    log "🛑 ABRP app not running. Skipping transmission."
     sleep "$POLL_INTERVAL"
     continue
   fi
