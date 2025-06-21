@@ -14,7 +14,7 @@ API_BASE_URL="http://localhost:8988/api/getDiPars"
 
 # This is a key, value mapping separated by |
 # The Chinese text is a reference, see API SPEC.
-TEXT_TEMPLATE="soc:{电量百分比}|mileage:{里程}|lock:{远程锁车状态}|"
+TEXT_TEMPLATE="soc:{电量百分比}|mileage:{里程}|lock:{远程锁车状态}|charge_gun_state:{充电枪插枪状态}|speed:{车速}"
 
 ###  Home Assistant config ###
 HASS_CONFIG_FILE="$(dirname "$0")/hass_config"
@@ -42,8 +42,10 @@ HA_SENSORS=(
   "soc:battery_soc:%"
   "mileage:car_mileage:km"
   "lock:lock:none"
-  "latitude:gps_latitude:none"
-  "longitude:gps_longitude:none"
+  "charge_gun_state:charge_gun_state:none"
+  "speed:speed:km/h"
+  "latitude:latitude:none"
+  "longitude:longitude:none"
 )
 
 CACHE_DIR="/data/data/com.termux/files/home/scripts/ha_cache"
