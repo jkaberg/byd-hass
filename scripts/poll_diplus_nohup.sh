@@ -1,6 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-
 # Exit if we're running already
 pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
 
@@ -8,13 +7,13 @@ pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
 # Configuration
 # ================================
 
-# To extend what sensors are consumed and pushed to HASS see the url bellow whats available.
+# To extend what sensors are consumed and pushed to HASS see the url below what's available.
 # API SPEC: https://apifox.com/apidoc/shared/c3ce5ff5-754f-438c-aef2-055d85aa0391/277818345e0
 
 API_BASE_URL="http://localhost:8988/api/getDiPars"
 
-# This is an key, value mapping seperated by |
-# The chinese text is an reference, see API SPEC.
+# This is a key, value mapping separated by |
+# The Chinese text is a reference, see API SPEC.
 TEXT_TEMPLATE="soc:{电量百分比}|mileage:{里程}|lock:{远程锁车状态}|"
 
 ###  Home Assistant config ###
@@ -36,13 +35,15 @@ fi
 # Sensor prefix used in HASS
 HA_SENSOR_PREFIX="byd_car_"
 
-# Sensor mapping, where first delimiter is corresponding to the TEXT_TEMPLATE key and HA_SENSOR_PREFIX
+# Sensor mapping, where first delimiter corresponds to the TEXT_TEMPLATE key and HA_SENSOR_PREFIX
 # Format: json_key:ha_sensor:unit
 # Example "output" in HASS: sensor.byd_car_battery_soc
 HA_SENSORS=(
   "soc:battery_soc:%"
   "mileage:car_mileage:km"
   "lock:lock:none"
+  "latitude:gps_latitude:none"
+  "longitude:gps_longitude:none"
 )
 
 CACHE_DIR="/data/data/com.termux/files/home/scripts/ha_cache"
@@ -133,6 +134,38 @@ process_response() {
   done
 }
 
+fetch_location() {
+  # Request a single GPS update (wait max 10s)
+  location_json=$(termux-location --provider gps --request single --timeout 10)
+
+  if [[ $? -ne 0 || -z "$location_json" ]]; then
+    log "❌ Failed to get location"
+    return
+  fi
+
+  latitude=$(echo "$location_json" | jq -r '.latitude')
+  longitude=$(echo "$location_json" | jq -r '.longitude')
+
+  if [[ "$latitude" != "null" && "$longitude" != "null" ]]; then
+    for coord in latitude longitude; do
+      value="${!coord}"
+      ha_sensor="gps_${coord}"
+      full_name="${HA_SENSOR_PREFIX}${ha_sensor}"
+      old_value=$(get_cached_value "$full_name")
+
+      if [[ "$value" != "$old_value" ]]; then
+        log "📍 Updating sensor.${full_name}: $old_value → $value"
+        post_to_home_assistant "$ha_sensor" "$value" "none"
+        set_cached_value "$full_name" "$value"
+      else
+        log "⏩ Skipping unchanged sensor.${full_name}: $value"
+      fi
+    done
+  else
+    log "❌ Invalid GPS data: $location_json"
+  fi
+}
+
 # ================================
 # Main Loop
 # ================================
@@ -151,7 +184,8 @@ while true; do
     log "❌ Failed to fetch data"
   fi
 
+  fetch_location
+
   log "⏳ Waiting 60 seconds..."
   sleep 60
 done
-
