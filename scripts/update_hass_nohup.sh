@@ -40,12 +40,13 @@ log() {
 push_sensor_to_hass() {
   local sensor="$1"
   local value="$2"
+  local unit="$3"
   local entity="sensor.${HA_SENSOR_PREFIX}${sensor}"
 
   curl -s -o /dev/null -X POST "$HA_BASE_URL/api/states/$entity" \
     -H "Authorization: Bearer $HA_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"state\": \"$value\", \"attributes\": {\"unit_of_measurement\": \"none\", \"friendly_name\": \"$sensor\"}}"
+    -d "{\"state\": \"$value\", \"attributes\": {\"unit_of_measurement\": \"$unit\", \"friendly_name\": \"$sensor\"}}"
 
   log "📡 Updated $entity to '$value'"
 }
