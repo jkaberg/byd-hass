@@ -17,16 +17,21 @@ This is an set of scripts to export information/data from your BYD car to Home A
 HA_BASE_URL="https://HASS-URL"
 HA_TOKEN="LONG-LIVED-ACCESS-TOKEN"
 ```
+- Optionally also configure and transmit ABRP telemetry (see [docs](https://documenter.getpostman.com/view/7396339/SWTK5a8w#intro) for obtaining API keys etc), in `$HOME/scripts` create the file `abrp_config` with:
+```
+ABRP_USER_TOKEN=XXXXX
+ABRP_API_KEY=XXXX
+```
 
 ## Features
 - Readonly integration with Diplus
 - Pushes data to Home Assistant
 - Caches data and transmits only on changes (saves bandwith)
 - Customizeble (in terms of which sensor data is consumed and transmitted)
+- Optional [ABRP](https://documenter.getpostman.com/view/7396339/SWTK5a8w#fdb20525-51da-4195-8138-54deabe907d5) telemetry script to feed ABRP with up to date SOC etc.
 
 
 ## Sensors
-
 - State of charge (Diplus)
 - Mileage (Diplus)
 - Lock state (Diplus)
