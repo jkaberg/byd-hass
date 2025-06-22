@@ -10,6 +10,8 @@ pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
 API_BASE_URL="http://localhost:8988/api/getDiPars"
 TEXT_TEMPLATE="soc:{电量百分比}|mileage:{里程}|lock:{远程锁车状态}|charge_gun_state:{充电枪插枪状态}|speed:{车速}"
 
+# Charge gun state: 1 = disconnected | 2 = connected
+
 SCRIPT_DIR="$(dirname "$0")"
 HASS_CONFIG_FILE="$SCRIPT_DIR/hass_config"
 
@@ -34,8 +36,6 @@ HA_SENSORS=(
   "lock:lock:none"
   "charge_gun_state:charge_gun_state:none"
   "speed:speed:km/h"
-  "latitude:latitude:none"
-  "longitude:longitude:none"
 )
 
 # ================================
@@ -110,37 +110,6 @@ process_response() {
   done
 }
 
-# Ideally(??) we'd get this from Diplus
-fetch_location() {
-  location_json=$(termux-location --provider gps --request single --timeout 10)
-
-  if [[ $? -ne 0 || -z "$location_json" ]]; then
-    log "❌ Failed to get location"
-    return
-  fi
-
-  latitude=$(echo "$location_json" | jq -r '.latitude')
-  longitude=$(echo "$location_json" | jq -r '.longitude')
-
-  if [[ "$latitude" != "null" && "$longitude" != "null" ]]; then
-    for coord in latitude longitude; do
-      value="${!coord}"
-      ha_sensor="gps_${coord}"
-      full_name="${HA_SENSOR_PREFIX}${ha_sensor}"
-      old_value=$(get_cached_value "$full_name")
-
-      if [[ "$value" != "$old_value" ]]; then
-        log "📍 Updating cache sensor.${full_name}: $old_value → $value"
-        set_cached_value "$full_name" "$value"
-      else
-        log "⏩ Skipping unchanged GPS sensor.${full_name}: $value"
-      fi
-    done
-  else
-    log "❌ Invalid GPS data: $location_json"
-  fi
-}
-
 # ================================
 # Main Loop
 # ================================
@@ -158,9 +127,6 @@ while true; do
   else
     log "❌ Failed to fetch data"
   fi
-
-  # Fetch location from Termux:API
-  fetch_location
 
   log "⏳ Waiting 60 seconds..."
   sleep 60

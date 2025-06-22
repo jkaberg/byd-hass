@@ -18,8 +18,6 @@ ABRP_SENSORS=(
   "byd_car_battery_soc"
   "byd_car_charge_gun_state"
   "byd_car_speed"
-  "byd_car_gps_latitude"
-  "byd_car_gps_longitude"
 )
 
 # ================================
@@ -54,10 +52,8 @@ get_sensor_value() {
 
 send_to_abrp() {
   local soc="$1"
-  local lat="$2"
-  local lon="$3"
-  local speed="$4"
-  local charging="$5"
+  local speed="$2"
+  local charging="$3"
   local timestamp
   timestamp=$(date +%s)
 
@@ -65,15 +61,11 @@ send_to_abrp() {
   payload=$(jq -n \
     --arg utc "$timestamp" \
     --arg soc "$soc" \
-    --arg lat "$lat" \
-    --arg lon "$lon" \
     --arg speed "$speed" \
     --arg charging "$charging" \
     '{
       utc: ($utc|tonumber),
       soc: ($soc|tonumber),
-      lat: ($lat|tonumber),
-      lon: ($lon|tonumber),
       speed: ($speed|tonumber),
       is_charging: ($charging|tonumber)
     }')
@@ -84,7 +76,7 @@ send_to_abrp() {
     "https://api.iternio.com/1/tlm/send?api_key=$ABRP_API_KEY&token=$ABRP_USER_TOKEN&tlm=$(jq -sRr @uri <<< "$payload")" \
     -o /dev/null
 
-  log "✅ Sent to ABRP: soc=$soc, lat=$lat, lon=$lon, speed=$speed, charging=$charging"
+  log "✅ Sent to ABRP: soc=$soc, speed=$speed, charging=$charging"
 }
 
 is_abrp_running() {
@@ -104,8 +96,6 @@ while true; do
   # Read current values
   soc=$(get_sensor_value "byd_car_battery_soc")
   speed=$(get_sensor_value "byd_car_speed")
-  lat=$(get_sensor_value "byd_car_gps_latitude")
-  lon=$(get_sensor_value "byd_car_gps_longitude")
   charging=$(get_sensor_value "byd_car_charge_gun_state")
 
   # Skip if soc is missing or invalid
@@ -123,7 +113,7 @@ while true; do
 
   # Only send if values changed since last time
   changed=false
-  for key in soc speed lat lon charging; do
+  for key in soc speed charging; do
     current="${!key}"
     if [[ "${last_values[$key]}" != "$current" ]]; then
       changed=true
@@ -132,7 +122,7 @@ while true; do
   done
 
   if [[ "$changed" == true ]]; then
-    send_to_abrp "$soc" "$lat" "$lon" "$speed" "$charging"
+    send_to_abrp "$soc" "$speed" "$charging"
   else
     log "⏩ No changes, skipping ABRP update."
   fi
