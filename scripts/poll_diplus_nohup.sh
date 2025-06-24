@@ -138,5 +138,5 @@ while true; do
   fi
 
   log "⏳ Waiting 60 seconds..."
-  sleep 60
+  sleep 10
 done

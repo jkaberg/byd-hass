@@ -10,7 +10,7 @@ pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
 SCRIPT_DIR="$(dirname "$0")"
 ABRP_CONFIG_FILE="$SCRIPT_DIR/abrp_config"
 CACHE_DIR="$SCRIPT_DIR/ha_cache"
-POLL_INTERVAL=60  # seconds
+POLL_INTERVAL=15  # seconds
 ABRP_PACKAGE_NAME="com.iternio.abrpapp"
 
 # Sensors to send to ABRP
