@@ -31,8 +31,8 @@ fi
 
 source "$ABRP_CONFIG_FILE"
 
-if [[ -z "$ABRP_API_KEY" || -z "$ABRP_USER_TOKEN" ]]; then
-  echo "❌ ABRP_API_KEY or ABRP_USER_TOKEN not set in 'abrp_config'. Exiting."
+if [[ -z "$ABRP_USER_TOKEN" ]]; then
+  echo "❌ ABRP_USER_TOKEN not set in 'abrp_config'. Exiting."
   exit 1
 fi
 
@@ -70,10 +70,10 @@ send_to_abrp() {
       is_charging: ($charging|tonumber)
     }')
 
-  # API Docs: https://documenter.getpostman.com/view/7396339/SWTK5a8w#fdb20525-51da-4195-8138-54deabe907d5
-
-  curl -s -X POST \
-    "https://api.iternio.com/1/tlm/send?api_key=$ABRP_API_KEY&token=$ABRP_USER_TOKEN&tlm=$(jq -sRr @uri <<< "$payload")" \
+  curl -s -X POST "https://api.iternio.com/1/tlm/send" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $ABRP_USER_TOKEN" \
+    -d "$payload" \
     -o /dev/null
 
   log "✅ Sent to ABRP: soc=$soc, speed=$speed, charging=$charging"
