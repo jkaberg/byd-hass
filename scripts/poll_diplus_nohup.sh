@@ -7,6 +7,8 @@ pgrep -f "$(basename "$0")" | grep -v "^$$\$" | grep -q . && exit
 # Configuration
 # ================================
 
+LAST_UPDATE_SENSOR="last_update"
+
 API_BASE_URL="http://localhost:8988/api/getDiPars"
 TEXT_TEMPLATE="soc:{电量百分比}|mileage:{里程}|lock:{远程锁车状态}|charge_gun_state:{充电枪插枪状态}|speed:{车速}"
 
@@ -70,6 +72,13 @@ set_cached_value() {
   local sensor_name="$1"
   local value="$2"
   echo "$value" > "${CACHE_DIR}/${sensor_name}"
+
+  # Update last_update sensor if we're updating a real sensor (not last_update itself)
+  if [[ "$sensor_name" != "${HA_SENSOR_PREFIX}${LAST_UPDATE_SENSOR}" ]]; then
+    local ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    echo "$ts" > "${CACHE_DIR}/${HA_SENSOR_PREFIX}${LAST_UPDATE_SENSOR}"
+    log "🕒 Updated sensor.${HA_SENSOR_PREFIX}${LAST_UPDATE_SENSOR}: $ts"
+  fi
 }
 
 process_response() {
