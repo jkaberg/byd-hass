@@ -12,6 +12,7 @@ ABRP_CONFIG_FILE="$SCRIPT_DIR/abrp_config"
 CACHE_DIR="$SCRIPT_DIR/ha_cache"
 POLL_INTERVAL=15  # seconds
 ABRP_PACKAGE_NAME="com.iternio.abrpapp"
+ADB_SERVER="localhost:5555"
 
 # Sensors to send to ABRP
 ABRP_SENSORS=(
@@ -39,6 +40,14 @@ fi
 # ================================
 # Functions
 # ================================
+
+# Ensure we disconnect on exit
+cleanup() {
+  log "👋 Disconnecting ADB..."
+  adb disconnect "$ADB_SERVER" > /dev/null
+}
+trap cleanup EXIT
+
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -79,9 +88,9 @@ send_to_abrp() {
   log "✅ Sent to ABRP: soc=$soc, speed=$speed, charging=$charging"
 }
 
+
 is_abrp_running() {
-  # Check if the ABRP app process is running
-  pidof "$ABRP_PACKAGE_NAME" > /dev/null 2>&1 || pgrep -f "$ABRP_PACKAGE_NAME" > /dev/null 2>&1
+  adb shell pidof "$ABRP_PACKAGE_NAME" > /dev/null 2>&1 || adb shell pgrep -f "$ABRP_PACKAGE_NAME" > /dev/null 2>&1
 }
 
 # ================================
@@ -93,6 +102,12 @@ declare -A last_values
 log "🚀 Starting ABRP reporter..."
 
 while true; do
+  # Ensure ADB is connected
+  if ! adb devices | grep -q "$ADB_SERVER"; then
+    log "🔌 Connecting to ADB server at $ADB_SERVER..."
+    adb connect "$ADB_SERVER" > /dev/null
+  fi
+
   # Read current values
   soc=$(get_sensor_value "byd_car_battery_soc")
   speed=$(get_sensor_value "byd_car_speed")
