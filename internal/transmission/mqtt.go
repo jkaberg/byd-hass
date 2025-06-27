@@ -3,7 +3,6 @@ package transmission
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/jkaberg/byd-hass/internal/mqtt"
 	"github.com/jkaberg/byd-hass/internal/sensors"

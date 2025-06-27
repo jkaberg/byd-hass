@@ -231,8 +231,10 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 
 	// Location data
 	if data.Location != nil {
-		telemetry.Latitude = &data.Location.Latitude
-		telemetry.Longitude = &data.Location.Longitude
+		telemetry.Location = &Location{
+			Lat: data.Location.Latitude,
+			Lon: data.Location.Longitude,
+		}
 		telemetry.Elevation = &data.Location.Altitude
 		telemetry.Heading = &data.Location.Bearing
 	}
