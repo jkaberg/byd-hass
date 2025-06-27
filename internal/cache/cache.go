@@ -69,7 +69,12 @@ func (m *Manager) GetChanges(data *sensors.SensorData) map[string]interface{} {
 
 		var currentValue interface{}
 		if field.Kind() == reflect.Ptr {
-			currentValue = field.Elem().Float()
+			// Handle pointer fields by getting the underlying value
+			if !field.IsNil() {
+				currentValue = field.Elem().Interface()
+			} else {
+				currentValue = nil
+			}
 		} else {
 			currentValue = field.Interface()
 		}

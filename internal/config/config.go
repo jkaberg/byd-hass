@@ -9,7 +9,7 @@ import (
 // Config holds all configuration options for the BYD-HASS application
 type Config struct {
 	// MQTT Configuration
-	MQTTUrl         string `json:"mqtt_url"`         // MQTT WebSocket URL
+	MQTTUrl         string `json:"mqtt_url"`         // MQTT URL (supports both WebSocket and standard MQTT)
 	DiscoveryPrefix string `json:"discovery_prefix"` // Home Assistant discovery prefix
 
 	// ABRP Configuration
@@ -21,8 +21,6 @@ type Config struct {
 
 	// Application Configuration
 	Verbose bool `json:"verbose"` // Enable verbose logging
-
-
 
 	// API Configuration
 	ExtendedPolling bool `json:"extended_polling"` // Use extended sensor polling for more data
@@ -56,10 +54,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("device ID is required")
 	}
 
-	// MQTT validation
+	// MQTT validation - support both WebSocket and standard MQTT protocols
 	if c.MQTTUrl != "" {
-		if !strings.HasPrefix(c.MQTTUrl, "ws://") && !strings.HasPrefix(c.MQTTUrl, "wss://") {
-			return fmt.Errorf("MQTT URL must use WebSocket protocol (ws:// or wss://)")
+		if !strings.HasPrefix(c.MQTTUrl, "ws://") && 
+		   !strings.HasPrefix(c.MQTTUrl, "wss://") && 
+		   !strings.HasPrefix(c.MQTTUrl, "mqtt://") && 
+		   !strings.HasPrefix(c.MQTTUrl, "mqtts://") {
+			return fmt.Errorf("MQTT URL must use supported protocol (ws://, wss://, mqtt://, or mqtts://)")
 		}
 	}
 
@@ -88,9 +89,6 @@ func (c *Config) HasMQTT() bool {
 func (c *Config) HasABRP() bool {
 	return c.ABRPAPIKey != "" && c.ABRPVehicleKey != ""
 }
-
-
-
 
 // GetAPITimeout returns the API timeout as a duration
 func (c *Config) GetAPITimeout() time.Duration {

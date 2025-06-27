@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +29,61 @@ const (
 	ABRPTransmitInterval = 10 * time.Second
 	MQTTTransmitInterval = 60 * time.Second
 )
+
+// Operation timeouts to prevent blocking
+const (
+	DiplusTimeout = 8 * time.Second // Timeout for Diplus API calls
+	MQTTTimeout   = 5 * time.Second // Timeout for MQTT operations
+	ABRPTimeout   = 8 * time.Second // Timeout for ABRP API calls
+)
+
+// SharedState holds application state with proper synchronization
+type SharedState struct {
+	mu                      sync.RWMutex
+	latestSensorData        *sensors.SensorData
+	hasUnsentChangesForMQTT bool
+	hasUnsentChangesForABRP bool
+}
+
+func (s *SharedState) GetLatestData() *sensors.SensorData {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestSensorData
+}
+
+func (s *SharedState) UpdateData(data *sensors.SensorData) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.latestSensorData = data
+	if data != nil {
+		s.hasUnsentChangesForMQTT = true
+		s.hasUnsentChangesForABRP = true
+	}
+}
+
+func (s *SharedState) HasUnsentMQTTChanges() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hasUnsentChangesForMQTT
+}
+
+func (s *SharedState) HasUnsentABRPChanges() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hasUnsentChangesForABRP
+}
+
+func (s *SharedState) ClearMQTTFlag() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hasUnsentChangesForMQTT = false
+}
+
+func (s *SharedState) ClearABRPFlag() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hasUnsentChangesForABRP = false
+}
 
 func main() {
 	// Parse command line flags
@@ -56,6 +112,15 @@ func main() {
 	diplusClient := api.NewDiplusClient("http://localhost:8988/api/getDiPars", logger)
 	cacheManager := cache.NewManager(logger)
 	locationProvider := location.NewTermuxLocationProvider(logger)
+
+	// Ensure location provider is properly shut down
+	defer locationProvider.Stop()
+
+	// Initialize shared state
+	sharedState := &SharedState{
+		hasUnsentChangesForMQTT: true, // Transmit on first run
+		hasUnsentChangesForABRP: true, // Transmit on first run
+	}
 
 	var mqttTransmitter *transmission.MQTTTransmitter
 	var abrpTransmitter *transmission.ABRPTransmitter
@@ -109,15 +174,24 @@ func main() {
 		defer mqttTicker.Stop()
 	}
 
-	// Store latest sensor data for transmission
-	var latestSensorData *sensors.SensorData
+	// Initial poll to populate data (non-blocking)
+	go pollAndFlagChangesAsync(ctx, diplusClient, locationProvider, cacheManager, sharedState, logger)
 
-	// Flags to track if there are new changes to be sent
-	var hasUnsentChangesForMQTT = true // Transmit on first run
-	var hasUnsentChangesForABRP = true // Transmit on first run
-
-	// Initial poll to populate data
-	pollAndFlagChanges(diplusClient, locationProvider, cacheManager, &latestSensorData, &hasUnsentChangesForMQTT, &hasUnsentChangesForABRP, logger)
+	// For MQTT, try to publish discovery config immediately, even without sensor data
+	if mqttTransmitter != nil {
+		go func() {
+			logger.Info("Publishing MQTT discovery configuration...")
+			// Create empty sensor data just to trigger discovery config publishing
+			emptySensorData := &sensors.SensorData{
+				Timestamp: time.Now(),
+			}
+			if err := transmitToMQTTAsync(ctx, mqttTransmitter, emptySensorData, logger); err != nil {
+				logger.WithError(err).Warn("Initial MQTT discovery config publishing failed, will retry with real data")
+			} else {
+				logger.Info("MQTT discovery configuration published successfully")
+			}
+		}()
+	}
 
 	logger.Info("BYD-HASS started successfully")
 
@@ -132,20 +206,24 @@ func main() {
 			cancel()
 			return
 		case <-diplusTicker.C:
-			// Poll sensor data and flag changes
-			pollAndFlagChanges(diplusClient, locationProvider, cacheManager, &latestSensorData, &hasUnsentChangesForMQTT, &hasUnsentChangesForABRP, logger)
+			// Poll sensor data and flag changes (non-blocking)
+			go pollAndFlagChangesAsync(ctx, diplusClient, locationProvider, cacheManager, sharedState, logger)
 		case <-func() <-chan time.Time {
 			if abrpTicker != nil {
 				return abrpTicker.C
 			}
 			return make(<-chan time.Time)
 		}():
-			if abrpTransmitter != nil && latestSensorData != nil && hasUnsentChangesForABRP {
-				if err := transmitToABRP(abrpTransmitter, latestSensorData, logger); err != nil {
-					logger.WithError(err).Error("ABRP transmission failed")
-				} else {
-					hasUnsentChangesForABRP = false // Clear flag on success
-				}
+			latestData := sharedState.GetLatestData()
+			if abrpTransmitter != nil && latestData != nil && sharedState.HasUnsentABRPChanges() {
+				// ABRP transmission (non-blocking)
+				go func(data *sensors.SensorData) {
+					if err := transmitToABRPAsync(ctx, abrpTransmitter, data, logger); err != nil {
+						logger.WithError(err).Error("ABRP transmission failed")
+					} else {
+						sharedState.ClearABRPFlag() // Clear flag on success
+					}
+				}(latestData)
 			}
 		case <-func() <-chan time.Time {
 			if mqttTicker != nil {
@@ -153,12 +231,25 @@ func main() {
 			}
 			return make(<-chan time.Time)
 		}():
-			if mqttTransmitter != nil && latestSensorData != nil && hasUnsentChangesForMQTT {
-				if err := transmitToMQTT(mqttTransmitter, latestSensorData, logger); err != nil {
-					logger.WithError(err).Error("MQTT transmission failed")
-				} else {
-					hasUnsentChangesForMQTT = false // Clear flag on success
-				}
+			logger.Debug("MQTT ticker triggered")
+			latestData := sharedState.GetLatestData()
+			if mqttTransmitter == nil {
+				logger.Debug("No MQTT transmitter configured, skipping")
+			} else if latestData == nil {
+				logger.Debug("No sensor data available for MQTT transmission")
+			} else if !sharedState.HasUnsentMQTTChanges() {
+				logger.Debug("No unsent changes for MQTT, skipping transmission")
+			} else {
+				// MQTT transmission (non-blocking)
+				go func(data *sensors.SensorData) {
+					logger.Info("Transmitting sensor data to MQTT...")
+					if err := transmitToMQTTAsync(ctx, mqttTransmitter, data, logger); err != nil {
+						logger.WithError(err).Error("MQTT transmission failed")
+					} else {
+						logger.Info("MQTT transmission successful")
+						sharedState.ClearMQTTFlag() // Clear flag on success
+					}
+				}(latestData)
 			}
 		}
 	}
@@ -170,9 +261,12 @@ func parseFlags() *config.Config {
 	// Version flag
 	showVersion := flag.Bool("version", false, "Show version and exit")
 
+	// Debug flag for comprehensive sensor analysis
+	debug := flag.Bool("debug", false, "Run comprehensive sensor debugging and exit")
+
 	flag.StringVar(&cfg.MQTTUrl, "mqtt-url",
 		getEnvOrDefault("BYD_HASS_MQTT_URL", ""),
-		"MQTT WebSocket URL (ws://user:pass@host:port/path)")
+		"MQTT URL (supports ws://, wss://, mqtt://, mqtts://)")
 
 	flag.StringVar(&cfg.ABRPAPIKey, "abrp-api-key",
 		getEnvOrDefault("BYD_HASS_ABRP_API_KEY", ""),
@@ -196,9 +290,14 @@ func parseFlags() *config.Config {
 
 	flag.Parse()
 
-	// Handle version flag
 	if *showVersion {
-		fmt.Printf("BYD-HASS version %s\n", version)
+		fmt.Printf("byd-hass %s\n", version)
+		os.Exit(0)
+	}
+
+	// Handle debug mode
+	if *debug {
+		runDebugMode()
 		os.Exit(0)
 	}
 
@@ -213,11 +312,8 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 
 func generateDeviceID() string {
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
-	return fmt.Sprintf("byd_%s_%d", hostname, time.Now().Unix())
+	// Use a consistent device ID to avoid creating new Home Assistant devices on each run
+	return "byd_car"
 }
 
 func setupLogger(verbose bool) *logrus.Logger {
@@ -236,91 +332,188 @@ func setupLogger(verbose bool) *logrus.Logger {
 	return logger
 }
 
-func pollAndFlagChanges(
+func pollAndFlagChangesAsync(
+	ctx context.Context,
 	diplusClient *api.DiplusClient,
 	locationProvider *location.TermuxLocationProvider,
 	cacheManager *cache.Manager,
-	latestData **sensors.SensorData,
-	hasUnsentChangesForMQTT *bool,
-	hasUnsentChangesForABRP *bool,
+	sharedState *SharedState,
 	logger *logrus.Logger,
 ) {
-	if err := pollSensorData(diplusClient, locationProvider, cacheManager, latestData, logger); err != nil {
+	// Create timeout context for this operation
+	timeoutCtx, cancel := context.WithTimeout(ctx, DiplusTimeout)
+	defer cancel()
+
+	logger.Debug("Starting sensor polling (async)...")
+	if err := pollSensorDataAsync(timeoutCtx, diplusClient, locationProvider, cacheManager, sharedState, logger); err != nil {
 		logger.WithError(err).Error("Sensor polling failed")
 		return
 	}
-	// If pollSensorData updated latestData, it means there were changes
-	if *latestData != nil {
-		*hasUnsentChangesForMQTT = true
-		*hasUnsentChangesForABRP = true
+	// The UpdateData call in pollSensorDataAsync already handles flagging changes
+	if sharedState.GetLatestData() != nil {
+		logger.Info("Sensor data updated, flagged for transmission")
+	} else {
+		logger.Debug("No sensor data changes detected")
 	}
 }
 
-func pollSensorData(
+func pollSensorDataAsync(
+	ctx context.Context,
 	diplusClient *api.DiplusClient,
 	locationProvider *location.TermuxLocationProvider,
 	cacheManager *cache.Manager,
-	latestData **sensors.SensorData,
+	sharedState *SharedState,
 	logger *logrus.Logger,
 ) error {
-	// Try extended polling first, fallback to default if needed
-	sensorData, err := diplusClient.GetExtendedSensorData()
-	if err != nil {
-		logger.WithError(err).Debug("Extended polling failed, using default polling")
-		sensorData, err = diplusClient.GetDefaultSensorData()
+	// Channel to receive sensor data
+	sensorDataChan := make(chan *sensors.SensorData, 1)
+	errorChan := make(chan error, 1)
+
+	// Start sensor data fetch in goroutine
+	go func() {
+		defer close(sensorDataChan)
+		defer close(errorChan)
+
+		// Try extended polling first, fallback to default if needed
+		sensorData, err := diplusClient.GetExtendedSensorData()
 		if err != nil {
-			return fmt.Errorf("failed to poll sensor data: %w", err)
+			logger.WithError(err).Debug("Extended polling failed, using default polling")
+			sensorData, err = diplusClient.GetDefaultSensorData()
+			if err != nil {
+				errorChan <- fmt.Errorf("failed to poll sensor data: %w", err)
+				return
+			}
 		}
+
+		// Fetch location data (non-blocking from cache)
+		locationData, err := locationProvider.GetLocation()
+		if err != nil {
+			// Log as debug since location is fetched in background and may not be available immediately
+			logger.WithError(err).Debug("Location data not available yet")
+		} else {
+			sensorData.Location = locationData
+			logger.WithFields(logrus.Fields{
+				"lat":      locationData.Latitude,
+				"lon":      locationData.Longitude,
+				"accuracy": locationData.Accuracy,
+			}).Debug("Location data included in sensor data")
+		}
+
+		sensorDataChan <- sensorData
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("sensor polling timed out after %v", DiplusTimeout)
+	case err := <-errorChan:
+		if err != nil {
+			return err
+		}
+	case sensorData := <-sensorDataChan:
+		logger.WithField("sensors_active", len(sensors.GetNonNilFields(sensorData))).Debug("Polled sensor data")
+
+		// Check for changes and cache
+		changes := cacheManager.GetChanges(sensorData)
+		if len(changes) == 0 {
+			logger.Debug("No sensor changes detected")
+			// Explicitly nil the pointer if no changes, so we don't re-transmit old data
+			sharedState.UpdateData(nil)
+			return nil
+		}
+
+		logger.WithField("changed_sensors", len(changes)).Info("Sensor changes detected")
+
+		// Update latest sensor data
+		sharedState.UpdateData(sensorData)
 	}
-
-	// Fetch location data
-	locationData, err := locationProvider.GetLocation()
-	if err != nil {
-		// Log as a warning instead of an error, so the app can continue without location
-		logger.WithError(err).Warn("Could not fetch location data")
-	} else {
-		sensorData.Location = locationData
-	}
-
-	logger.WithField("sensors_active", len(sensors.GetNonNilFields(sensorData))).Debug("Polled sensor data")
-
-	// Check for changes and cache
-	changes := cacheManager.GetChanges(sensorData)
-	if len(changes) == 0 {
-		logger.Debug("No sensor changes detected")
-		// Explicitly nil the pointer if no changes, so we don't re-transmit old data
-		*latestData = nil
-		return nil
-	}
-
-	logger.WithField("changed_sensors", len(changes)).Info("Sensor changes detected")
-
-	// Update latest sensor data
-	*latestData = sensorData
 
 	return nil
 }
 
-func transmitToABRP(
+func transmitToABRPAsync(
+	ctx context.Context,
 	transmitter *transmission.ABRPTransmitter,
 	data *sensors.SensorData,
 	logger *logrus.Logger,
 ) error {
-	if err := transmitter.Transmit(data); err != nil {
-		return fmt.Errorf("ABRP transmission failed: %w", err)
+	// Create timeout context for this operation
+	timeoutCtx, cancel := context.WithTimeout(ctx, ABRPTimeout)
+	defer cancel()
+
+	// Channel to receive result
+	errorChan := make(chan error, 1)
+
+	// Start transmission in goroutine
+	go func() {
+		defer close(errorChan)
+		if err := transmitter.Transmit(data); err != nil {
+			errorChan <- fmt.Errorf("ABRP transmission failed: %w", err)
+		}
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case <-timeoutCtx.Done():
+		return fmt.Errorf("ABRP transmission timed out after %v", ABRPTimeout)
+	case err := <-errorChan:
+		if err != nil {
+			return err
+		}
+		logger.Debug("Successfully transmitted to ABRP")
+		return nil
 	}
-	logger.Debug("Successfully transmitted to ABRP")
-	return nil
 }
 
-func transmitToMQTT(
+func transmitToMQTTAsync(
+	ctx context.Context,
 	transmitter *transmission.MQTTTransmitter,
 	data *sensors.SensorData,
 	logger *logrus.Logger,
 ) error {
-	if err := transmitter.Transmit(data); err != nil {
-		return fmt.Errorf("MQTT transmission failed: %w", err)
+	// Create timeout context for this operation
+	timeoutCtx, cancel := context.WithTimeout(ctx, MQTTTimeout)
+	defer cancel()
+
+	// Channel to receive result
+	errorChan := make(chan error, 1)
+
+	// Start transmission in goroutine
+	go func() {
+		defer close(errorChan)
+		if err := transmitter.Transmit(data); err != nil {
+			errorChan <- fmt.Errorf("MQTT transmission failed: %w", err)
+		}
+	}()
+
+	// Wait for completion or timeout
+	select {
+	case <-timeoutCtx.Done():
+		return fmt.Errorf("MQTT transmission timed out after %v", MQTTTimeout)
+	case err := <-errorChan:
+		if err != nil {
+			return err
+		}
+		logger.Debug("Successfully transmitted to MQTT")
+		return nil
 	}
-	logger.Debug("Successfully transmitted to MQTT")
-	return nil
+}
+
+// runDebugMode runs simple raw vs parsed value comparison
+func runDebugMode() {
+	logger := setupLogger(true) // Always verbose for debug mode
+	logger.Info("Starting BYD-HASS Raw vs Parsed Value Comparison")
+
+	// Create Diplus client
+	diplusClient := api.NewDiplusClient("http://localhost:8988/api/getDiPars", logger)
+
+	logger.Info("Comparing raw API values vs parsed sensor data...")
+
+	// Run comparison
+	if err := diplusClient.CompareAllSensors(); err != nil {
+		logger.WithError(err).Fatal("Failed to compare sensor values")
+	}
+
+	fmt.Println("\n✅ Comparison complete!")
+	fmt.Println("Review the output above to identify type mismatches and parsing failures.")
 }

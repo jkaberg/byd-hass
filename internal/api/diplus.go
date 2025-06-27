@@ -179,3 +179,27 @@ func (c *DiplusClient) SetTimeout(timeout time.Duration) {
 func (c *DiplusClient) SetLogger(logger *logrus.Logger) {
 	c.logger = logger
 }
+
+// CompareAllSensors queries all sensors and compares raw vs parsed values
+func (c *DiplusClient) CompareAllSensors() error {
+	c.logger.Info("Querying Diplus API for all sensors to compare raw vs parsed values...")
+
+	// Get all sensor data
+	sensorData, err := c.GetAllSensorData()
+	if err != nil {
+		return fmt.Errorf("failed to get sensor data: %w", err)
+	}
+
+	// Also get the raw response for comparison
+	allSensorIDs := sensors.GetAllSensorIDs()
+	template := c.buildAPITemplate(allSensorIDs)
+	responseBody, err := c.makeRequest(template)
+	if err != nil {
+		return fmt.Errorf("failed to get raw API response: %w", err)
+	}
+
+	c.logger.Info("Comparing raw API values vs parsed values...")
+	sensors.CompareRawVsParsed(responseBody, sensorData)
+
+	return nil
+}

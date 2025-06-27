@@ -17,7 +17,7 @@ type Client struct {
 	logger   *logrus.Logger
 }
 
-// NewClient creates a new MQTT client with WebSocket support
+// NewClient creates a new MQTT client with support for both WebSocket and standard MQTT protocols
 func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error) {
 	// Parse the MQTT URL
 	parsedURL, err := url.Parse(mqttURL)
@@ -30,7 +30,27 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 
 	// Configure MQTT client options
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(mqttURL)
+	
+	// Handle different protocol schemes
+	var brokerURL string
+	switch parsedURL.Scheme {
+	case "ws", "wss":
+		// WebSocket MQTT - use URL as-is
+		brokerURL = mqttURL
+		logger.Debug("Using WebSocket MQTT connection")
+	case "mqtt":
+		// Standard MQTT - convert to tcp://
+		brokerURL = strings.Replace(mqttURL, "mqtt://", "tcp://", 1)
+		logger.Debug("Using standard MQTT connection (TCP)")
+	case "mqtts":
+		// Secure MQTT - convert to ssl://
+		brokerURL = strings.Replace(mqttURL, "mqtts://", "ssl://", 1)
+		logger.Debug("Using secure MQTT connection (SSL/TLS)")
+	default:
+		return nil, fmt.Errorf("unsupported protocol scheme: %s (supported: ws, wss, mqtt, mqtts)", parsedURL.Scheme)
+	}
+	
+	opts.AddBroker(brokerURL)
 	opts.SetClientID(clientID)
 	opts.SetCleanSession(true)
 	opts.SetAutoReconnect(true)
@@ -70,6 +90,7 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 
 	logger.WithFields(logrus.Fields{
 		"broker":    cleanURL(mqttURL),
+		"protocol":  parsedURL.Scheme,
 		"client_id": clientID,
 	}).Info("MQTT client connected")
 

@@ -72,7 +72,7 @@ echo "✅ ADB connected."
 echo -e "\n${BLUE}4. Creating necessary directories...${NC}"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$BOOT_DIR"
-adb shell "mkdir -p '$SHARED_DIR'"
+adb -s "$ADB_SERVER" shell "mkdir -p '$SHARED_DIR'"
 echo "✅ Directories created."
 
 # 5. Download Latest Binary
@@ -91,7 +91,7 @@ echo "✅ Download complete."
 
 # 6. Stop Previous Instances
 echo -e "\n${BLUE}6. Stopping any previous instances...${NC}"
-adb shell "pkill -f '$ADB_KEEPALIVE_SCRIPT_NAME'" || true
+adb -s "$ADB_SERVER" shell "pkill -f '$ADB_KEEPALIVE_SCRIPT_NAME'" || true
 pkill -f "$BOOT_SCRIPT_NAME" || true
 pkill -f "$BINARY_PATH" || true
 echo "✅ Old processes terminated."
@@ -124,7 +124,7 @@ echo "✅ Config file created at $CONFIG_PATH"
 
 # 9. Create External Guardian Script
 echo -e "\n${BLUE}9. Creating external keep-alive script...${NC}"
-adb shell "cat > '$ADB_KEEPALIVE_SCRIPT_PATH'" << KEEP_ALIVE_EOF
+adb -s "$ADB_SERVER" shell "cat > '$ADB_KEEPALIVE_SCRIPT_PATH'" << KEEP_ALIVE_EOF
 #!/system/bin/sh
 echo "[\$(date)] External keep-alive service started." >> "$ADB_LOG_FILE"
 while true; do

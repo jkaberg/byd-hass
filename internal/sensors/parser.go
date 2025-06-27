@@ -93,26 +93,32 @@ func setFieldValue(field reflect.Value, valueStr string) error {
 
 	switch elemType.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		// Normalize the value string for European formats
+		normalizedValue := normalizeNumericValue(valueStr)
 		// Try parsing as float first to handle values like "1.0"
-		floatVal, err := strconv.ParseFloat(valueStr, 64)
+		floatVal, err := strconv.ParseFloat(normalizedValue, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse value '%s' as float for int conversion: %w", valueStr, err)
 		}
 		intVal := int64(floatVal)
 		newVal.Elem().SetInt(intVal)
 	case reflect.Float32, reflect.Float64:
-		floatVal, err := strconv.ParseFloat(valueStr, 64)
+		// Normalize the value string for European formats
+		normalizedValue := normalizeNumericValue(valueStr)
+		floatVal, err := strconv.ParseFloat(normalizedValue, 64)
 		if err != nil {
 			return fmt.Errorf("failed to parse float value '%s': %w", valueStr, err)
 		}
 		newVal.Elem().SetFloat(floatVal)
 	case reflect.Bool:
-		boolVal, err := strconv.ParseBool(valueStr)
+		// Normalize the value string for European formats
+		normalizedValue := normalizeNumericValue(valueStr)
+		boolVal, err := strconv.ParseBool(normalizedValue)
 		if err != nil {
 			// Fallback for "1" or "0"
-			if valueStr == "1" {
+			if normalizedValue == "1" {
 				boolVal = true
-			} else if valueStr == "0" {
+			} else if normalizedValue == "0" {
 				boolVal = false
 			} else {
 				return fmt.Errorf("failed to parse bool value '%s': %w", valueStr, err)
@@ -120,6 +126,7 @@ func setFieldValue(field reflect.Value, valueStr string) error {
 		}
 		newVal.Elem().SetBool(boolVal)
 	case reflect.String:
+		// For string fields, preserve the original value without normalization
 		newVal.Elem().SetString(valueStr)
 	default:
 		return fmt.Errorf("unsupported field type: %s", elemType.Kind())
@@ -128,6 +135,21 @@ func setFieldValue(field reflect.Value, valueStr string) error {
 	field.Set(newVal)
 
 	return nil
+}
+
+// normalizeNumericValue converts European number formats to standard formats
+func normalizeNumericValue(value string) string {
+	if value == "" {
+		return "0"
+	}
+
+	// Replace Unicode minus sign with standard minus
+	value = strings.ReplaceAll(value, "−", "-")
+	
+	// Replace European decimal comma with dot
+	value = strings.ReplaceAll(value, ",", ".")
+	
+	return value
 }
 
 // SnakeToCamelCase converts snake_case to CamelCase
@@ -264,4 +286,153 @@ func GetNonNilFields(data *SensorData) map[string]interface{} {
 	}
 
 	return result
+}
+
+// CompareRawVsParsed compares raw API response with parsed sensor data
+func CompareRawVsParsed(responseBody []byte, parsedData *SensorData) {
+	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("RAW API vs PARSED VALUES COMPARISON")
+	fmt.Println(strings.Repeat("=", 80))
+
+	// Parse the API response
+	var apiResp APIResponse
+	if err := json.Unmarshal(responseBody, &apiResp); err != nil {
+		fmt.Printf("ERROR: Failed to unmarshal API response: %v\n", err)
+		return
+	}
+
+	if !apiResp.Success {
+		fmt.Println("ERROR: API returned success=false")
+		return
+	}
+
+	// Parse the raw value string into key-value pairs
+	rawValues := parseRawValues(apiResp.Val)
+	
+	fmt.Printf("Found %d raw values from API\n", len(rawValues))
+	fmt.Printf("Parsed %d non-nil fields in struct\n", countNonNilFields(parsedData))
+	
+	// Get reflection info for the parsed data
+	v := reflect.ValueOf(parsedData).Elem()
+
+	var successCount, failCount, mismatchCount int
+
+	fmt.Println("\n📊 VALUE-BY-VALUE COMPARISON:")
+	
+	for key, rawValue := range rawValues {
+		// Convert snake_case key to CamelCase field name
+		fieldName := SnakeToCamelCase(key)
+		
+		// Find the corresponding struct field
+		field := v.FieldByName(fieldName)
+		if !field.IsValid() {
+			fmt.Printf("❓ UNKNOWN: %s = '%s' (no matching field: %s)\n", key, rawValue, fieldName)
+			continue
+		}
+
+		// Check if field is set (not nil)
+		if field.IsNil() {
+			fmt.Printf("❌ FAILED: %s = '%s' -> nil (parsing failed)\n", key, rawValue)
+			failCount++
+			continue
+		}
+
+		// Get the actual parsed value
+		parsedValue := field.Elem().Interface()
+		
+		// Determine expected vs actual types
+		expectedType := getExpectedType(rawValue)
+		actualType := fmt.Sprintf("%T", parsedValue)
+		
+		if expectedType != actualType {
+			fmt.Printf("⚠️  MISMATCH: %s = '%s' -> %v (%s) [expected: %s]\n", 
+				key, rawValue, parsedValue, actualType, expectedType)
+			mismatchCount++
+		} else {
+			fmt.Printf("✅ SUCCESS: %s = '%s' -> %v (%s)\n", 
+				key, rawValue, parsedValue, actualType)
+			successCount++
+		}
+	}
+
+	// Summary
+	fmt.Println("\n" + strings.Repeat("-", 80))
+	fmt.Printf("📈 SUMMARY:\n")
+	fmt.Printf("  ✅ Successful: %d\n", successCount)
+	fmt.Printf("  ⚠️  Type Mismatches: %d\n", mismatchCount)
+	fmt.Printf("  ❌ Parse Failures: %d\n", failCount)
+	fmt.Printf("  Total Compared: %d\n", successCount+mismatchCount+failCount)
+	
+	if mismatchCount > 0 {
+		fmt.Printf("\n🔧 TYPE MISMATCH FIXES NEEDED:\n")
+		fmt.Printf("Review the ⚠️  MISMATCH entries above and fix the struct field types accordingly.\n")
+	}
+	
+	if failCount > 0 {
+		fmt.Printf("\n🐛 PARSING FAILURES:\n")
+		fmt.Printf("Review the ❌ FAILED entries above - these values couldn't be parsed at all.\n")
+	}
+	
+	fmt.Println(strings.Repeat("=", 80))
+}
+
+// parseRawValues parses the raw API value string into key-value pairs
+func parseRawValues(valString string) map[string]string {
+	values := make(map[string]string)
+	
+	if valString == "" {
+		return values
+	}
+
+	// Split by pipe separator
+	pairs := strings.Split(valString, "|")
+
+	for _, pair := range pairs {
+		// Split key:value
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			values[key] = value
+		}
+	}
+
+	return values
+}
+
+// getExpectedType determines what Go type a raw string value should be
+func getExpectedType(rawValue string) string {
+	// Check for empty strings or obvious string values (file paths, etc.)
+	if rawValue == "" || strings.Contains(rawValue, "/") || strings.Contains(rawValue, "\\") {
+		return "string"
+	}
+	
+	// Check if it's a number (our sensor data is mostly numeric and we use float64 for all numeric values)
+	if _, err := strconv.ParseFloat(rawValue, 64); err == nil {
+		// All numeric values in our BYD sensor data are now float64
+		return "float64"
+	}
+	
+	// Check if it's a boolean-like value (though we don't currently use bool types)
+	if rawValue == "true" || rawValue == "false" {
+		return "bool"
+	}
+	
+	// Default to string
+	return "string"
+}
+
+// countNonNilFields counts how many fields in the sensor data are not nil
+func countNonNilFields(data *SensorData) int {
+	count := 0
+	v := reflect.ValueOf(data).Elem()
+	
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		if field.Kind() == reflect.Ptr && !field.IsNil() {
+			count++
+		}
+	}
+	
+	return count
 }

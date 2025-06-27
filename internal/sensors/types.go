@@ -19,7 +19,7 @@ type SensorData struct {
 	PowerStatus          *float64 `json:"power_status,omitempty"`           // 电源状态
 	Speed                *float64 `json:"speed,omitempty"`                  // 车速
 	Mileage              *float64 `json:"mileage,omitempty"`                // 里程
-	GearPosition         *int `json:"gear_position,omitempty"`          // 档位
+	GearPosition         *float64 `json:"gear_position,omitempty"`          // 档位
 	EngineRPM            *float64 `json:"engine_rpm,omitempty"`             // 发动机转速
 	BrakeDepth           *float64 `json:"brake_depth,omitempty"`            // 刹车深度
 	AcceleratorDepth     *float64 `json:"accelerator_depth,omitempty"`      // 加速踏板深度
@@ -41,7 +41,7 @@ type SensorData struct {
 	BatteryPercentage    *float64 `json:"battery_percentage,omitempty"`     // 电量百分比
 	FuelPercentage       *float64 `json:"fuel_percentage,omitempty"`        // 油量百分比
 	TotalFuelConsumption *float64 `json:"total_fuel_consumption,omitempty"` // 总燃油消耗
-	ChargingStatus       *int `json:"charging_status,omitempty"`        // 充电状态
+	ChargingStatus       *float64 `json:"charging_status,omitempty"`        // 充电状态
 	BatteryVoltage12V    *float64 `json:"battery_voltage_12v,omitempty"`    // 蓄电池电压
 
 	// Environment & Weather
@@ -108,20 +108,20 @@ type SensorData struct {
 	HazardLights         *float64 `json:"hazard_lights,omitempty"`          // 双闪
 
 	// Doors & Locks
-	DriverDoorLock       *int `json:"driver_door_lock,omitempty"`       // 主驾车门锁
-	DriverDoor           *int `json:"driver_door,omitempty"`            // 主驾车门
-	PassengerDoor        *int `json:"passenger_door,omitempty"`         // 副驾车门
-	LeftRearDoor         *int `json:"left_rear_door,omitempty"`         // 左后车门
-	RightRearDoor        *int `json:"right_rear_door,omitempty"`        // 右后车门
-	Hood                 *int `json:"hood,omitempty"`                   // 引擎盖
-	TrunkDoor            *int `json:"trunk_door,omitempty"`             // 后备箱门
+	DriverDoorLock       *float64 `json:"driver_door_lock,omitempty"`       // 主驾车门锁
+	DriverDoor           *float64 `json:"driver_door,omitempty"`            // 主驾车门
+	PassengerDoor        *float64 `json:"passenger_door,omitempty"`         // 副驾车门
+	LeftRearDoor         *float64 `json:"left_rear_door,omitempty"`         // 左后车门
+	RightRearDoor        *float64 `json:"right_rear_door,omitempty"`        // 右后车门
+	Hood                 *float64 `json:"hood,omitempty"`                   // 引擎盖
+	TrunkDoor            *float64 `json:"trunk_door,omitempty"`             // 后备箱门
 	FuelCap              *float64 `json:"fuel_cap,omitempty"`               // 油箱盖
-	LeftRearDoorLock     *int `json:"left_rear_door_lock,omitempty"`    // 左后车门锁
-	PassengerDoorLock    *int `json:"passenger_door_lock,omitempty"`    // 副驾车门锁
-	RightRearDoorLock    *int `json:"right_rear_door_lock,omitempty"`   // 右后车门锁
-	TrunkLock            *int `json:"trunk_lock,omitempty"`             // 后备箱门锁
-	LeftRearChildLock    *int `json:"left_rear_child_lock,omitempty"`   // 左后儿童锁
-	RightRearChildLock   *int `json:"right_rear_child_lock,omitempty"`  // 右后儿童锁
+	LeftRearDoorLock     *float64 `json:"left_rear_door_lock,omitempty"`    // 左后车门锁
+	PassengerDoorLock    *float64 `json:"passenger_door_lock,omitempty"`    // 副驾车门锁
+	RightRearDoorLock    *float64 `json:"right_rear_door_lock,omitempty"`   // 右后车门锁
+	TrunkLock            *float64 `json:"trunk_lock,omitempty"`             // 后备箱门锁
+	LeftRearChildLock    *float64 `json:"left_rear_child_lock,omitempty"`   // 左后儿童锁
+	RightRearChildLock   *float64 `json:"right_rear_child_lock,omitempty"`  // 右后儿童锁
 
 	// Windows
 	DriverWindowOpenPercent    *float64 `json:"driver_window_open_percent,omitempty"`    // 主驾车窗打开百分比
@@ -144,8 +144,8 @@ type SensorData struct {
 	// HVAC/Climate
 	ACStatus             *float64 `json:"ac_status,omitempty"`              // 空调状态
 	FanSpeedLevel        *float64 `json:"fan_speed_level,omitempty"`        // 风量档位
-	ACCirculationMode    *int `json:"ac_circulation_mode,omitempty"`    // 空调循环方式
-	ACBlowingMode        *int `json:"ac_blowing_mode,omitempty"`        // 空调出风模式
+	ACCirculationMode    *float64 `json:"ac_circulation_mode,omitempty"`    // 空调循环方式
+	ACBlowingMode        *float64 `json:"ac_blowing_mode,omitempty"`        // 空调出风模式
 
 	// Extended Features (1000+ IDs)
 	SurroundViewStatus   *float64 `json:"surround_view_status,omitempty"`   // 全景状态
@@ -162,10 +162,10 @@ type SensorData struct {
 	AIPersonConfidence   *float64 `json:"ai_person_confidence,omitempty"`   // AI识别人可信度
 	AIVehicleConfidence  *float64 `json:"ai_vehicle_confidence,omitempty"`  // AI识别车可信度
 	LastSentryTriggerTime *float64 `json:"last_sentry_trigger_time,omitempty"` // 上次哨兵触发时间
-	LastSentryTriggerImage *float64 `json:"last_sentry_trigger_image,omitempty"` // 上次哨兵触发画面
+	LastSentryTriggerImage *string  `json:"last_sentry_trigger_image,omitempty"` // 上次哨兵触发画面
 	LastVideoStartTime   *float64 `json:"last_video_start_time,omitempty"`  // 上次录像文件开始时间
 	LastVideoEndTime     *float64 `json:"last_video_end_time,omitempty"`    // 上次录像文件结束时间
-	LastVideoPath        *float64 `json:"last_video_path,omitempty"`        // 上次录像路径
+	LastVideoPath        *string  `json:"last_video_path,omitempty"`        // 上次录像路径
 }
 
 // SensorDefinition maps sensor IDs to their Chinese names and Go struct field names
