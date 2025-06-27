@@ -18,6 +18,8 @@ The application runs as a static binary on Android devices through Termux.
 - [Termux:API](https://github.com/termux/termux-api)
 - MQTT broker for Home Assistant integration
 
+**Make sure you've configured the above properly before running `byd-hass`!**
+
 ## Installation
 
 Run this command in Termux:
