@@ -205,8 +205,8 @@ func (t *MQTTTransmitter) publishDiscoveryConfig() error {
 	// Publish sensor discovery configs
 	for _, sensor := range sensorConfigs {
 		config := HADiscoveryConfig{
-			Name:              fmt.Sprintf("BYD Car %s", sensor.Name),
-			UniqueID:          fmt.Sprintf("byd_car_%s_%s", t.deviceID, sensor.EntityID),
+			Name:              sensor.Name,
+			UniqueID:          fmt.Sprintf("%s_%s", t.deviceID, sensor.EntityID),
 			StateTopic:        fmt.Sprintf("%s/state", baseTopic),
 			ValueTemplate:     fmt.Sprintf("{{ value_json.%s | default(0) }}", sensor.EntityID),
 			AvailabilityTopic: fmt.Sprintf("%s/availability", baseTopic),
@@ -638,7 +638,7 @@ func (t *MQTTTransmitter) publishDeviceTrackerDiscovery(baseTopic string, device
 	locationTopic := fmt.Sprintf("%s/location", baseTopic)
 
 	config := map[string]interface{}{
-		"name":                  "BYD Car Location",
+		"name":                  "Location",
 		"unique_id":             fmt.Sprintf("byd_car_%s_location", t.deviceID),
 		"state_topic":           locationTopic,
 		"json_attributes_topic": locationTopic,
