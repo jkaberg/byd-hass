@@ -1,8 +1,6 @@
 package sensors
 
 import (
-	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
