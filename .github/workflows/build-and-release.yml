@@ -1,0 +1,107 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Get short commit SHA
+      id: vars
+      run: |
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "timestamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+    
+    - name: Build ARM64 binary
+      run: |
+        GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+          -ldflags="-s -w -X main.version=${{ steps.vars.outputs.short_sha }}" \
+          -o byd-hass-arm64 \
+          cmd/byd-hass/main.go
+    
+    - name: Create build info
+      run: |
+        echo "Build Information" > build-info.txt
+        echo "=================" >> build-info.txt
+        echo "Version: ${{ steps.vars.outputs.short_sha }}" >> build-info.txt
+        echo "Built: ${{ steps.vars.outputs.timestamp }}" >> build-info.txt
+        echo "Target: linux/arm64" >> build-info.txt
+        echo "Commit: ${{ github.sha }}" >> build-info.txt
+        echo "" >> build-info.txt
+        echo "Installation:" >> build-info.txt
+        echo 'curl -L -o byd-hass https://github.com/${{ github.repository }}/releases/download/${{ steps.vars.outputs.short_sha }}/byd-hass-arm64' >> build-info.txt
+        echo "chmod +x byd-hass" >> build-info.txt
+        echo "./byd-hass --help" >> build-info.txt
+    
+    - name: Delete existing release
+      run: |
+        gh release delete ${{ steps.vars.outputs.short_sha }} --yes || true
+        git tag -d ${{ steps.vars.outputs.short_sha }} || true
+        git push origin :refs/tags/${{ steps.vars.outputs.short_sha }} || true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.vars.outputs.short_sha }}
+        name: "BYD-HASS ${{ steps.vars.outputs.short_sha }}"
+        body: |
+          ## BYD-HASS ARM64 Binary Release
+          
+          **Version:** `${{ steps.vars.outputs.short_sha }}`  
+          **Built:** `${{ steps.vars.outputs.timestamp }}`  
+          **Target:** `linux/arm64` (Android/Termux compatible)  
+          **Commit:** `${{ github.sha }}`
+          
+          ### Installation
+          ```bash
+          # Download and make executable
+          curl -L -o byd-hass https://github.com/${{ github.repository }}/releases/download/${{ steps.vars.outputs.short_sha }}/byd-hass-arm64
+          chmod +x byd-hass
+          
+          # Run with help to see options
+          ./byd-hass --help
+          ```
+          
+          ### Usage Examples
+          ```bash
+          # Basic MQTT only
+          ./byd-hass -mqtt-url "ws://user:pass@mqtt-broker:9001/mqtt"
+          
+          # With ABRP integration
+          ./byd-hass \
+            -mqtt-url "ws://user:pass@mqtt-broker:9001/mqtt" \
+            -abrp-api-key "your-api-key" \
+            -abrp-vehicle-key "your-vehicle-key"
+          
+          # Verbose logging
+          ./byd-hass -verbose -mqtt-url "ws://user:pass@mqtt-broker:9001/mqtt"
+          ```
+          
+          ### Changes in this build
+          - Built from commit: ${{ github.sha }}
+          - Automatic build from main branch
+        files: |
+          byd-hass-arm64
+          build-info.txt
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

@@ -1,0 +1,186 @@
+package mqtt
+
+import (
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/sirupsen/logrus"
+)
+
+// Client wraps the MQTT client with additional functionality
+type Client struct {
+	client   mqtt.Client
+	deviceID string
+	logger   *logrus.Logger
+}
+
+// NewClient creates a new MQTT client with WebSocket support
+func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error) {
+	// Parse the MQTT URL
+	parsedURL, err := url.Parse(mqttURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid MQTT URL: %w", err)
+	}
+
+	// Generate client ID
+	clientID := fmt.Sprintf("byd-hass-%s", deviceID)
+
+	// Configure MQTT client options
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker(mqttURL)
+	opts.SetClientID(clientID)
+	opts.SetCleanSession(true)
+	opts.SetAutoReconnect(true)
+	opts.SetKeepAlive(60 * time.Second)
+	opts.SetPingTimeout(1 * time.Second)
+	opts.SetConnectTimeout(5 * time.Second)
+	opts.SetMaxReconnectInterval(10 * time.Second)
+
+	// Set credentials if provided in URL
+	if parsedURL.User != nil {
+		username := parsedURL.User.Username()
+		password, _ := parsedURL.User.Password()
+		opts.SetUsername(username)
+		opts.SetPassword(password)
+	}
+
+	// Set connection handlers
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		logger.WithError(err).Warn("MQTT connection lost")
+	})
+
+	opts.SetReconnectingHandler(func(client mqtt.Client, opts *mqtt.ClientOptions) {
+		logger.Info("MQTT reconnecting...")
+	})
+
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		logger.Info("MQTT connected successfully")
+	})
+
+	// Create client
+	client := mqtt.NewClient(opts)
+
+	// Connect to broker
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		return nil, fmt.Errorf("failed to connect to MQTT broker: %w", token.Error())
+	}
+
+	logger.WithFields(logrus.Fields{
+		"broker":    cleanURL(mqttURL),
+		"client_id": clientID,
+	}).Info("MQTT client connected")
+
+	return &Client{
+		client:   client,
+		deviceID: deviceID,
+		logger:   logger,
+	}, nil
+}
+
+// Publish publishes a message to the specified topic
+func (c *Client) Publish(topic string, payload []byte, retained bool) error {
+	qos := byte(1) // At least once delivery
+	token := c.client.Publish(topic, qos, retained, payload)
+	
+	if token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to publish to topic %s: %w", topic, token.Error())
+	}
+
+	c.logger.WithFields(logrus.Fields{
+		"topic":    topic,
+		"size":     len(payload),
+		"retained": retained,
+	}).Debug("Published MQTT message")
+
+	return nil
+}
+
+// Subscribe subscribes to a topic with a message handler
+func (c *Client) Subscribe(topic string, handler mqtt.MessageHandler) error {
+	qos := byte(1)
+	token := c.client.Subscribe(topic, qos, handler)
+	
+	if token.Wait() && token.Error() != nil {
+		return fmt.Errorf("failed to subscribe to topic %s: %w", topic, token.Error())
+	}
+
+	c.logger.WithField("topic", topic).Debug("Subscribed to MQTT topic")
+	return nil
+}
+
+// IsConnected returns true if the client is connected
+func (c *Client) IsConnected() bool {
+	return c.client.IsConnected()
+}
+
+// Disconnect disconnects the client
+func (c *Client) Disconnect(quiesce uint) {
+	c.client.Disconnect(quiesce)
+	c.logger.Info("MQTT client disconnected")
+}
+
+// GetDeviceID returns the device ID
+func (c *Client) GetDeviceID() string {
+	return c.deviceID
+}
+
+// cleanURL removes credentials from URL for logging
+func cleanURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	
+	if parsed.User != nil {
+		parsed.User = url.UserPassword("***", "***")
+	}
+	
+	return parsed.String()
+}
+
+// GetBaseTopic returns the base topic for this device
+func (c *Client) GetBaseTopic() string {
+	return fmt.Sprintf("byd_car/%s", c.deviceID)
+}
+
+// GetDiscoveryTopic returns the Home Assistant discovery topic
+func (c *Client) GetDiscoveryTopic(prefix, entityType, entityID string) string {
+	return fmt.Sprintf("%s/%s/byd_car_%s/%s/config", prefix, entityType, c.deviceID, entityID)
+}
+
+// GetStateTopic returns the state topic for this device
+func (c *Client) GetStateTopic() string {
+	return fmt.Sprintf("%s/state", c.GetBaseTopic())
+}
+
+// GetAvailabilityTopic returns the availability topic for this device
+func (c *Client) GetAvailabilityTopic() string {
+	return fmt.Sprintf("%s/availability", c.GetBaseTopic())
+}
+
+// PublishAvailability publishes device availability status
+func (c *Client) PublishAvailability(online bool) error {
+	status := "offline"
+	if online {
+		status = "online"
+	}
+	
+	return c.Publish(c.GetAvailabilityTopic(), []byte(status), true)
+}
+
+// BuildCleanTopic ensures topic follows MQTT standards
+func BuildCleanTopic(parts ...string) string {
+	var cleanParts []string
+	for _, part := range parts {
+		// Replace invalid characters
+		clean := strings.ReplaceAll(part, " ", "_")
+		clean = strings.ReplaceAll(clean, "+", "plus")
+		clean = strings.ReplaceAll(clean, "#", "hash")
+		clean = strings.ToLower(clean)
+		cleanParts = append(cleanParts, clean)
+	}
+	return strings.Join(cleanParts, "/")
+} 

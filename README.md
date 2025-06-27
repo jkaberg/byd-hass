@@ -1,46 +1,118 @@
-# byd-hass
-Export your BYD car data to Home Assistant
+# BYD-HASS
 
-## Disclaimer
-This is made available with best intentions, however you're solely responsible for whatever happends (good or bad). The author of this repository takes no reponsibility. 
+Export your BYD car data to Home Assistant and ABRP using a modern Go application.
 
-## What is this?
-This is an set of scripts to export information/data from your BYD car to Home Assistant. These data are made available through the app Diplus, for more context/information [see this Github issue](https://github.com/jkaberg/byd-react-app-reverse/issues/2)
+## Overview
+
+BYD-HASS is a standalone Go application that runs on an Android device (like the car's head unit) inside Termux. It polls the local Diplus API for vehicle data, and transmits it to Home Assistant (via MQTT) and A Better Route Planner (ABRP).
+
+**Key Features:**
+-   Efficient polling: 15s for Diplus, 10s for ABRP, 60s for MQTT.
+-   Home Assistant MQTT auto-discovery for seamless integration.
+-   Transmits data only on change to reduce network traffic.
+-   Directly supports ABRP telemetry.
+-   Interactive installer for easy setup.
+
+## Features
+
+*   Polls the BYD Diplus API for vehicle data at 15-second intervals.
+*   Transmits data to Home Assistant via MQTT (every 60s) and/or A Better Route Planner (ABRP) (every 10s).
+*   Intelligent caching to only transmit data when values have changed.
+*   Automatic Home Assistant MQTT discovery for all supported sensors and a device tracker.
+*   Graceful handling of API and network errors.
+*   Configurable via command-line flags and environment variables.
+*   Provides GPS location data for ABRP and Home Assistant using the Termux:API.
+
+## Dependencies
+
+This application is designed to run on an Android device using [Termux](https://termux.com/). For full functionality, including GPS location tracking, you must have the **Termux:API** add-on application installed and the `termux-api` package installed within Termux.
+
+```bash
+# Install the termux-api package from within Termux
+pkg install termux-api
+```
+
+Without the Termux:API, the application will still function but will not be able to provide location data to ABRP or Home Assistant.
 
 ## Installation
 
-- First you need to be able to sideload apps, there are various methods on how-to do this depeding on BYD Dilink OS version (see youtube or similar for your car)
-- Sideload [Diplus](http://lanye.pw/di/), [Termux](https://github.com/termux/termux-app) and [Termux:Boot](https://github.com/termux/termux-boot/) (make sure you give permissions and configure these apps appropriately)
-- Launch Termux and run `curl -sSL https://raw.githubusercontent.com/jkaberg/byd-hass/refs/heads/main/install.sh | bash`
-- Create the file `hass_config` in the `$HOME/scripts` directory and add the following content modifying to your HASS installation
-```
-HA_BASE_URL="https://HASS-URL"
-HA_TOKEN="LONG-LIVED-ACCESS-TOKEN"
-```
-- Optionally also configure and transmit [ABRP telemetry](https://documenter.getpostman.com/view/7396339/SWTK5a8w#fdb20525-51da-4195-8138-54deabe907d5) (see [docs](https://documenter.getpostman.com/view/7396339/SWTK5a8w#intro) for obtaining API keys etc), in `$HOME/scripts` create the file `abrp_config` with:
-```
-ABRP_USER_TOKEN=XXXXX
-ABRP_API_KEY=XXXX
+### Prerequisites
+-   A BYD vehicle with the [Diplus app](http://lanye.pw/di/) installed and active.
+-   An Android device (typically the car's head unit) with [Termux](https://github.com/termux/termux-app) installed.
+-   An MQTT broker with WebSocket support enabled.
+
+### Install
+Run the following command in your Termux session. The installer is interactive and will guide you through the configuration.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/jkaberg/byd-hass/main/install.sh | bash
 ```
 
-## Features
-- Readonly integration with Diplus
-- Pushes data to Home Assistant
-- Caches data and transmits only on changes (saves bandwith)
-- Customizeble (in terms of which sensor data is consumed and transmitted)
-- Optional [ABRP](https://documenter.getpostman.com/view/7396339/SWTK5a8w#fdb20525-51da-4195-8138-54deabe907d5) telemetry script to feed ABRP with up to date SOC etc.
+The installer will:
+1.  Install necessary dependencies (`adb`, `curl`, `jq`).
+2.  Download the latest version of `byd-hass`.
+3.  Prompt you for configuration details (MQTT, ABRP).
+4.  Set up a keep-alive service to ensure the application is always running.
 
+## Configuration
 
-## Sensors
-- State of charge (Diplus)
-- Mileage (Diplus)
-- Lock state (Diplus)
-- Speed (Diplus)
-- Charge gun state (Diplus)
+The application is configured during the installation. If you need to reconfigure, you can re-run the installer.
 
-## TODO
+It can also be configured using command-line arguments or environment variables if you choose to run it manually.
 
-- [x] Verify that the solution always runs when the car is powered on
-- [ ] Run the solution when the car is not running (How does Diplus do it?)
-- [ ] Support more sensors
-- [ ] Move to MQTT instead of HTTP push
+### Command Line Options
+```bash
+byd-hass [options]
+
+Options:
+  -mqtt-url string          MQTT WebSocket URL (ws://user:pass@host:port/path)
+  -abrp-api-key string      ABRP API key (optional)
+  -abrp-vehicle-key string  ABRP vehicle key (optional)
+  -device-id string         Device identifier (auto-generated if not set)
+  -verbose                  Enable verbose logging
+  -discovery-prefix string  HA discovery prefix (default: homeassistant)
+```
+
+### Environment Variables
+All options can be set via environment variables with a `BYD_HASS_` prefix (e.g., `BYD_HASS_MQTT_URL`).
+
+## Home Assistant Integration
+
+The application automatically discovers and configures a wide array of sensors in Home Assistant. Entities are grouped by category for clarity.
+
+**Available Sensor Categories:**
+- **Core:** Speed, Mileage, Gear Position, Power Status
+- **Battery & Charging:** State of Charge (SoC), Power Consumption, Temperatures, Charging Status
+- **Environment:** Cabin & Outside Temperature
+- **Safety & Security:** Seatbelt Status, Lock Status
+- **Doors & Windows:** Status for all doors, windows, hood, and trunk
+- **Tire Pressure:** Pressure for each tire
+- **Lights:** Status for all exterior and interior lights
+- **Climate (HVAC):** AC Status, Fan Speed, Blower Mode
+- **And many more...** including steering, control, and radar data.
+
+All sensors are created with appropriate device classes and units of measurement.
+
+## Service Management
+
+The installation script sets up a persistent service.
+
+-   **To Stop The Service**: The installer will stop any running instance when it starts. You can re-run the installer and exit it to stop the service.
+-   **To View Logs**:
+    ```bash
+    adb shell tail -f /storage/emulated/0/bydhass/byd-hass.log
+    ```
+-   **To Restart**: Re-running the installer will restart the service with the new configuration.
+
+The service runs in the background and is managed by a keep-alive script to ensure it restarts automatically if it stops.
+
+## Building from Source
+
+### Build
+```bash
+./build.sh  # Creates byd-hass-arm64 for Android
+```
+
+## Disclaimer
+
+This is unofficial software. Use at your own risk. The author takes no responsibility for any consequences.
