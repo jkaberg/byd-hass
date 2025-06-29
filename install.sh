@@ -53,20 +53,26 @@ echo -e "${GREEN}🚗 BYD-HASS Bootstrapping Installer${NC}"
 # 1. Setup Termux Environment
 echo -e "\n${BLUE}1. Setting up Termux environment...${NC}"
 echo "Installing dependencies (adb, curl, jq, termux-api)..."
-pkg install -y adb curl jq termux-api >/dev/null 2>&1
+pkg install -y android-tools curl jq termux-api >/dev/null 2>&1
 echo "✅ Environment ready."
 
 # 2. Explain Manual Steps
 echo -e "\n${BLUE}2. Important Manual Steps Required:${NC}"
 echo -e "${YELLOW}   - You must install the 'Termux:Boot' app from F-Droid or Google Play.${NC}"
 echo -e "${YELLOW}   - You must enable 'Wireless debugging' in Android Developer Options.${NC}"
-echo -e "${YELLOW}   - You must grant Termux 'run in background' / 'unrestricted battery' permissions.${NC}"
+echo -e "${YELLOW}   - You must grant Termux, Termux:Boot and Termux:API to 'run on boot' (The app is called 'Deactive background start')
+# com.byd.appstartmanagement
 read -p "Press [Enter] to continue once you have completed these steps..."
 
-# 3. Connect ADB to self
-echo -e "\n${BLUE}3. Connecting ADB to localhost...${NC}"
+# 3a. Connect ADB to self
+echo -e "\n${BLUE}3a. Connecting ADB to localhost (make sure to Accept and remember the connection)...${NC}"
 adb connect "$ADB_SERVER"
 echo "✅ ADB connected."
+
+# 3b. Enable background start for Termux, Termux:Boot and Termux:API
+echo -e "\n${BLUE}3b. opening 'Deactive background start' app, uncheck Termux, Termux:Boot and Termux:API and hit OK...${NC}"
+adb -s "$ADB_SERVER" shell "am start -n am start -n com.byd.appstartmanagement/.frame.AppStartManagement"
+read -p "Press [Enter] to continue once you have completed these steps..."
 
 # 4. Create Directories
 echo -e "\n${BLUE}4. Creating necessary directories...${NC}"
