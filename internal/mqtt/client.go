@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/url"
 	"strings"
@@ -30,14 +31,18 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 
 	// Configure MQTT client options
 	opts := mqtt.NewClientOptions()
-	
+
 	// Handle different protocol schemes
 	var brokerURL string
 	switch parsedURL.Scheme {
-	case "ws", "wss":
+	case "ws":
 		// WebSocket MQTT - use URL as-is
 		brokerURL = mqttURL
 		logger.Debug("Using WebSocket MQTT connection")
+	case "wss":
+		brokerURL = mqttURL
+		logger.Debug("Using secure WebSocket MQTT connection")
+		opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true})
 	case "mqtt":
 		// Standard MQTT - convert to tcp://
 		brokerURL = strings.Replace(mqttURL, "mqtt://", "tcp://", 1)
@@ -46,10 +51,12 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 		// Secure MQTT - convert to ssl://
 		brokerURL = strings.Replace(mqttURL, "mqtts://", "ssl://", 1)
 		logger.Debug("Using secure MQTT connection (SSL/TLS)")
+		// Disable certificate verification to support self-signed certs
+		opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true})
 	default:
 		return nil, fmt.Errorf("unsupported protocol scheme: %s (supported: ws, wss, mqtt, mqtts)", parsedURL.Scheme)
 	}
-	
+
 	opts.AddBroker(brokerURL)
 	opts.SetClientID(clientID)
 	opts.SetCleanSession(true)
@@ -105,7 +112,7 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 func (c *Client) Publish(topic string, payload []byte, retained bool) error {
 	qos := byte(1) // At least once delivery
 	token := c.client.Publish(topic, qos, retained, payload)
-	
+
 	if token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to publish to topic %s: %w", topic, token.Error())
 	}
@@ -123,7 +130,7 @@ func (c *Client) Publish(topic string, payload []byte, retained bool) error {
 func (c *Client) Subscribe(topic string, handler mqtt.MessageHandler) error {
 	qos := byte(1)
 	token := c.client.Subscribe(topic, qos, handler)
-	
+
 	if token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to subscribe to topic %s: %w", topic, token.Error())
 	}
@@ -154,11 +161,11 @@ func cleanURL(rawURL string) string {
 	if err != nil {
 		return rawURL
 	}
-	
+
 	if parsed.User != nil {
 		parsed.User = url.UserPassword("***", "***")
 	}
-	
+
 	return parsed.String()
 }
 
@@ -188,7 +195,7 @@ func (c *Client) PublishAvailability(online bool) error {
 	if online {
 		status = "online"
 	}
-	
+
 	return c.Publish(c.GetAvailabilityTopic(), []byte(status), true)
 }
 
@@ -204,4 +211,4 @@ func BuildCleanTopic(parts ...string) string {
 		cleanParts = append(cleanParts, clean)
 	}
 	return strings.Join(cleanParts, "/")
-} 
+}

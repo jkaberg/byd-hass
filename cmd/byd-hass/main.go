@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"sync"
@@ -86,6 +87,9 @@ func main() {
 
 	// Setup logger
 	logger := setupLogger(cfg.Verbose)
+
+	// Use a custom DNS resolver to bypass broken localhost resolvers on Termux/Android
+	setupCustomDNSResolver(logger)
 
 	logger.WithFields(logrus.Fields{
 		"version":              version,
@@ -533,4 +537,23 @@ func runDebugMode(cfg *config.Config) {
 	}
 
 	logger.Info("--- Debug Mode Finished ---")
+}
+
+// setupCustomDNSResolver replaces net.DefaultResolver with one that queries
+// public DNS servers directly (1.1.1.1 with 8.8.8.8 as fallback).  This
+// avoids "connection refused" errors when the local DNS service is not
+// running, which is common in some Termux/Android environments.
+func setupCustomDNSResolver(logger *logrus.Logger) {
+	net.DefaultResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 5 * time.Second}
+			conn, err := d.DialContext(ctx, "udp", "1.1.1.1:53")
+			if err != nil {
+				logger.WithError(err).Warn("Primary DNS (1.1.1.1) failed, falling back to 8.8.8.8")
+				return d.DialContext(ctx, "udp", "8.8.8.8:53")
+			}
+			return conn, nil
+		},
+	}
 }

@@ -1,11 +1,9 @@
 package transmission
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -87,37 +85,16 @@ type ABRPTelemetry struct {
 
 // NewABRPTransmitter creates a new ABRP transmitter
 func NewABRPTransmitter(apiKey, token string, logger *logrus.Logger) *ABRPTransmitter {
-	// Custom dialer with a specific DNS resolver to avoid issues on Termux/Android
-	dialer := &net.Dialer{
-		Resolver: &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				d := net.Dialer{
-					Timeout: time.Millisecond * time.Duration(5000), // 5 seconds
-				}
-				// Force DNS resolution via a public DNS to avoid local resolver issues
-				// Attempt to connect to primary DNS (Cloudflare)
-				conn, err := d.DialContext(ctx, "udp", "1.1.1.1:53")
-				if err != nil {
-					// Fallback to secondary DNS (Google)
-					logger.WithError(err).Warn("Primary DNS failed, trying fallback")
-					return d.DialContext(ctx, "udp", "8.8.8.8:53")
-				}
-				return conn, err
-			},
-		},
-	}
-
+	// Rely on the global custom DNS resolver installed in main.go.
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           dialer.DialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 	}
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	return &ABRPTransmitter{
 		apiKey: apiKey,
