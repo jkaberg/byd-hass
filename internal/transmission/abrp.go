@@ -300,20 +300,20 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 
 	// Lower priority - Tire pressure (convert from bar to kPa)
 	if data.LeftFrontTirePressure != nil {
-		// BYD sensor data is in bar (scaled by 0.01), convert to kPa
-		pressureKPa := (*data.LeftFrontTirePressure * 0.01) * 100 // bar to kPa
+		// BYD sensor data now in bar; convert to kPa
+		pressureKPa := *data.LeftFrontTirePressure * 100
 		telemetry.TirePressureFL = &pressureKPa
 	}
 	if data.RightFrontTirePressure != nil {
-		pressureKPa := (*data.RightFrontTirePressure * 0.01) * 100
+		pressureKPa := *data.RightFrontTirePressure * 100
 		telemetry.TirePressureFR = &pressureKPa
 	}
 	if data.LeftRearTirePressure != nil {
-		pressureKPa := (*data.LeftRearTirePressure * 0.01) * 100
+		pressureKPa := *data.LeftRearTirePressure * 100
 		telemetry.TirePressureRL = &pressureKPa
 	}
 	if data.RightRearTirePressure != nil {
-		pressureKPa := (*data.RightRearTirePressure * 0.01) * 100
+		pressureKPa := *data.RightRearTirePressure * 100
 		telemetry.TirePressureRR = &pressureKPa
 	}
 

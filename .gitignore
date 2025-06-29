@@ -1,4 +1,2 @@
-# Ignore compiled binary output
-byd-hass 
-
+build/**
 .cursorrules
