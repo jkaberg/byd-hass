@@ -70,7 +70,7 @@ echo "✅ ADB connected."
 
 # 3b. Enable background start for Termux, Termux:Boot and Termux:API
 echo -e "\n${BLUE}3b. Opening 'Deactive background start' app, uncheck Termux, Termux:Boot and Termux:API and hit OK...${NC}"
-adb -s "$ADB_SERVER" shell "am start -n com.byd.appstartmanagement/.frame.AppStartManagement"
+adb -s "$ADB_SERVER" shell "am start -n com.byd.appstartmanagement/.frame.AppStartManagement" >/dev/null 2>&1
 read -p "Press [Enter] to continue once you have completed these steps..."
 
 # 4. Create Directories
