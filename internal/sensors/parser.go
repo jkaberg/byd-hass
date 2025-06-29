@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -59,13 +60,12 @@ func parseValueString(valString string, sensorData *SensorData) error {
 		key := strings.TrimSpace(parts[0])
 		valueStr := strings.TrimSpace(parts[1])
 
-		// Convert snake_case key to field name
-		fieldName := SnakeToCamelCase(key)
-
-		// Find the field in the struct
-		field := v.FieldByName(fieldName)
+		// Lookup the struct field by the authoritative key directly; no fallback
+		// conversion is needed because Diplus now echoes back exactly what we
+		// requested.
+		field := v.FieldByName(key)
 		if !field.IsValid() || !field.CanSet() {
-			// Field not found or not settable, skip
+			// Field not found or not settable; skip.
 			continue
 		}
 
@@ -81,6 +81,13 @@ func parseValueString(valString string, sensorData *SensorData) error {
 
 // setFieldValue sets a reflect.Value field with the parsed string value
 func setFieldValue(field reflect.Value, valueStr string) error {
+	// Normalize the value string for European formats
+	normalizedValue := normalizeNumericValue(valueStr)
+
+	// If the normalized value is empty, treat it as null/not present
+	if normalizedValue == "" {
+		return nil // Leave the pointer nil
+	}
 	if field.Kind() != reflect.Ptr {
 		return fmt.Errorf("field is not a pointer")
 	}
@@ -92,44 +99,19 @@ func setFieldValue(field reflect.Value, valueStr string) error {
 	newVal := reflect.New(elemType)
 
 	switch elemType.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		// Normalize the value string for European formats
-		normalizedValue := normalizeNumericValue(valueStr)
-		// Try parsing as float first to handle values like "1.0"
-		floatVal, err := strconv.ParseFloat(normalizedValue, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse value '%s' as float for int conversion: %w", valueStr, err)
-		}
-		intVal := int64(floatVal)
-		newVal.Elem().SetInt(intVal)
 	case reflect.Float32, reflect.Float64:
-		// Normalize the value string for European formats
-		normalizedValue := normalizeNumericValue(valueStr)
 		floatVal, err := strconv.ParseFloat(normalizedValue, 64)
 		if err != nil {
-			return fmt.Errorf("failed to parse float value '%s': %w", valueStr, err)
+			return fmt.Errorf("failed to parse float value '%s': %w", normalizedValue, err)
 		}
 		newVal.Elem().SetFloat(floatVal)
-	case reflect.Bool:
-		// Normalize the value string for European formats
-		normalizedValue := normalizeNumericValue(valueStr)
-		boolVal, err := strconv.ParseBool(normalizedValue)
-		if err != nil {
-			// Fallback for "1" or "0"
-			if normalizedValue == "1" {
-				boolVal = true
-			} else if normalizedValue == "0" {
-				boolVal = false
-			} else {
-				return fmt.Errorf("failed to parse bool value '%s': %w", valueStr, err)
-			}
-		}
-		newVal.Elem().SetBool(boolVal)
 	case reflect.String:
-		// For string fields, preserve the original value without normalization
-		newVal.Elem().SetString(valueStr)
+		newVal.Elem().SetString(normalizedValue)
 	default:
-		return fmt.Errorf("unsupported field type: %s", elemType.Kind())
+		// We currently only expect *float64 and *string fields in SensorData.
+		// Unknown types are ignored rather than treated as errors to keep the
+		// parser resilient to future struct changes.
+		return nil
 	}
 
 	field.Set(newVal)
@@ -140,77 +122,42 @@ func setFieldValue(field reflect.Value, valueStr string) error {
 // normalizeNumericValue converts European number formats to standard formats
 func normalizeNumericValue(value string) string {
 	if value == "" {
-		return "0"
+		return ""
 	}
 
 	// Replace Unicode minus sign with standard minus
 	value = strings.ReplaceAll(value, "−", "-")
-	
+
 	// Replace European decimal comma with dot
 	value = strings.ReplaceAll(value, ",", ".")
-	
+
 	return value
 }
 
-// SnakeToCamelCase converts snake_case to CamelCase
-func SnakeToCamelCase(s string) string {
-	parts := strings.Split(s, "_")
-	result := ""
+var matchFirstCap = regexp.MustCompile("(.)([A-Z][a-z]+)")
+var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
-	for _, part := range parts {
-		if len(part) > 0 {
-			result += strings.ToUpper(part[:1]) + strings.ToLower(part[1:])
-		}
-	}
-
-	return result
+// ToSnakeCase converts a CamelCase string to snake_case.
+func ToSnakeCase(str string) string {
+	snake := matchFirstCap.ReplaceAllString(str, "${1}_${2}")
+	snake = matchAllCap.ReplaceAllString(snake, "${1}_${2}")
+	return strings.ToLower(snake)
 }
 
-// GetDefaultSensorIDs returns the default set of sensor IDs for basic monitoring
-func GetDefaultSensorIDs() []int {
+// GetSensorIDs returns a minimal set of essential sensor IDs for basic vehicle monitoring.
+func GetSensorIDs() []int {
 	return []int{
-		33, // 电量百分比 (Battery Percentage)
-		3,  // 里程 (Mileage)
-		22, // 远程锁车状态 (Remote Lock Status)
-		12, // 充电枪插枪状态 (Charge Gun State)
-		2,  // 车速 (Speed)
-		25, // 车内温度 (Cabin Temperature)
-		26, // 车外温度 (Outside Temperature)
-		52, // 充电状态 (Charging Status)
-	}
-}
-
-// GetExtendedSensorIDs returns an extended set of sensor IDs for comprehensive monitoring
-func GetExtendedSensorIDs() []int {
-	return []int{
-		// Core vehicle data
-		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
-		// Battery & charging
-		12, 13, 14, 15, 16, 17, 18, 29, 32, 33, 34, 35, 39, 52,
-		// Environment & weather
-		19, 20, 25, 26, 27, 28, 108,
-		// Safety & security
-		21, 22, 73, 74, 75, 76,
-		// Steering & control
-		30, 31, 36, 37, 38, 50, 51, 88, 89, 92,
-		// Radar sensors
-		40, 41, 42, 43, 44, 45, 46, 47, 90, 91,
-		// Wipers & exterior
-		48, 49,
-		// Tire pressure
-		53, 54, 55, 56,
-		// Turn signals & lights
-		57, 58, 99, 100, 101, 104, 105, 106, 107, 109,
-		// Doors & locks
-		59, 81, 82, 83, 84, 85, 86, 87, 93, 94, 95, 96, 97, 98,
-		// Windows
-		61, 62, 63, 64, 65, 66,
-		// Vehicle modes
-		67, 68,
-		// Date/time
-		69, 70, 71, 72,
-		// HVAC/climate
-		77, 78, 79, 80,
+		33, // BatteryPercentage
+		2,  // Speed
+		52, // ChargingStatus
+		10, // EnginePower
+		26, // OutsideTemperature
+		3,  // Mileage
+		14, // CabinTemperature
+		53, // LeftFrontTirePressure
+		54, // RightFrontTirePressure
+		55, // LeftRearTirePressure
+		56, // RightRearTirePressure
 	}
 }
 
@@ -288,7 +235,7 @@ func GetNonNilFields(data *SensorData) map[string]interface{} {
 	return result
 }
 
-// CompareRawVsParsed compares raw API response with parsed sensor data
+// CompareRawVsParsed compares the raw API response map with the parsed SensorData struct.
 func CompareRawVsParsed(responseBody []byte, parsedData *SensorData) {
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Println("RAW API vs PARSED VALUES COMPARISON")
@@ -308,25 +255,24 @@ func CompareRawVsParsed(responseBody []byte, parsedData *SensorData) {
 
 	// Parse the raw value string into key-value pairs
 	rawValues := parseRawValues(apiResp.Val)
-	
+
 	fmt.Printf("Found %d raw values from API\n", len(rawValues))
 	fmt.Printf("Parsed %d non-nil fields in struct\n", countNonNilFields(parsedData))
-	
+
 	// Get reflection info for the parsed data
 	v := reflect.ValueOf(parsedData).Elem()
 
 	var successCount, failCount, mismatchCount int
 
 	fmt.Println("\n📊 VALUE-BY-VALUE COMPARISON:")
-	
+
 	for key, rawValue := range rawValues {
-		// Convert snake_case key to CamelCase field name
-		fieldName := SnakeToCamelCase(key)
-		
-		// Find the corresponding struct field
+		// Direct match only; we no longer support automatic key conversion.
+		fieldName := key
 		field := v.FieldByName(fieldName)
+
 		if !field.IsValid() {
-			fmt.Printf("❓ UNKNOWN: %s = '%s' (no matching field: %s)\n", key, rawValue, fieldName)
+			fmt.Printf("❓ UNKNOWN: %s = '%s' (no matching field)\n", key, rawValue)
 			continue
 		}
 
@@ -339,17 +285,17 @@ func CompareRawVsParsed(responseBody []byte, parsedData *SensorData) {
 
 		// Get the actual parsed value
 		parsedValue := field.Elem().Interface()
-		
+
 		// Determine expected vs actual types
 		expectedType := getExpectedType(rawValue)
 		actualType := fmt.Sprintf("%T", parsedValue)
-		
+
 		if expectedType != actualType {
-			fmt.Printf("⚠️  MISMATCH: %s = '%s' -> %v (%s) [expected: %s]\n", 
+			fmt.Printf("⚠️  MISMATCH: %s = '%s' -> %v (%s) [expected: %s]\n",
 				key, rawValue, parsedValue, actualType, expectedType)
 			mismatchCount++
 		} else {
-			fmt.Printf("✅ SUCCESS: %s = '%s' -> %v (%s)\n", 
+			fmt.Printf("✅ SUCCESS: %s = '%s' -> %v (%s)\n",
 				key, rawValue, parsedValue, actualType)
 			successCount++
 		}
@@ -362,24 +308,24 @@ func CompareRawVsParsed(responseBody []byte, parsedData *SensorData) {
 	fmt.Printf("  ⚠️  Type Mismatches: %d\n", mismatchCount)
 	fmt.Printf("  ❌ Parse Failures: %d\n", failCount)
 	fmt.Printf("  Total Compared: %d\n", successCount+mismatchCount+failCount)
-	
+
 	if mismatchCount > 0 {
 		fmt.Printf("\n🔧 TYPE MISMATCH FIXES NEEDED:\n")
 		fmt.Printf("Review the ⚠️  MISMATCH entries above and fix the struct field types accordingly.\n")
 	}
-	
+
 	if failCount > 0 {
 		fmt.Printf("\n🐛 PARSING FAILURES:\n")
 		fmt.Printf("Review the ❌ FAILED entries above - these values couldn't be parsed at all.\n")
 	}
-	
+
 	fmt.Println(strings.Repeat("=", 80))
 }
 
 // parseRawValues parses the raw API value string into key-value pairs
 func parseRawValues(valString string) map[string]string {
 	values := make(map[string]string)
-	
+
 	if valString == "" {
 		return values
 	}
@@ -406,18 +352,18 @@ func getExpectedType(rawValue string) string {
 	if rawValue == "" || strings.Contains(rawValue, "/") || strings.Contains(rawValue, "\\") {
 		return "string"
 	}
-	
+
 	// Check if it's a number (our sensor data is mostly numeric and we use float64 for all numeric values)
 	if _, err := strconv.ParseFloat(rawValue, 64); err == nil {
 		// All numeric values in our BYD sensor data are now float64
 		return "float64"
 	}
-	
+
 	// Check if it's a boolean-like value (though we don't currently use bool types)
 	if rawValue == "true" || rawValue == "false" {
 		return "bool"
 	}
-	
+
 	// Default to string
 	return "string"
 }
@@ -426,13 +372,13 @@ func getExpectedType(rawValue string) string {
 func countNonNilFields(data *SensorData) int {
 	count := 0
 	v := reflect.ValueOf(data).Elem()
-	
+
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i)
 		if field.Kind() == reflect.Ptr && !field.IsNil() {
 			count++
 		}
 	}
-	
+
 	return count
 }

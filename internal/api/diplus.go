@@ -74,8 +74,10 @@ func (c *DiplusClient) buildAPITemplate(sensorIDs []int) string {
 			continue
 		}
 
-		// Convert field name to snake_case for the key
-		key := sensors.ToSnakeCase(sensor.FieldName)
+		// Use the struct FieldName directly as the key (e.g. BatteryPercentage)
+		// This ensures the same identifier is echoed back by Diplus, eliminating
+		// any key-translation logic in the parser.
+		key := sensor.FieldName
 
 		// Create template part: key:{Chinese_name}
 		part := fmt.Sprintf("%s:{%s}", key, sensor.ChineseName)
@@ -137,16 +139,6 @@ func (c *DiplusClient) makeRequest(template string) ([]byte, error) {
 	return body, nil
 }
 
-// GetDefaultSensorData fetches data for the default set of sensors
-func (c *DiplusClient) GetDefaultSensorData() (*sensors.SensorData, error) {
-	return c.GetSensorData(sensors.GetDefaultSensorIDs())
-}
-
-// GetExtendedSensorData fetches data for an extended set of sensors
-func (c *DiplusClient) GetExtendedSensorData() (*sensors.SensorData, error) {
-	return c.GetSensorData(sensors.GetExtendedSensorIDs())
-}
-
 // GetAllSensorData fetches data for all available sensors
 func (c *DiplusClient) GetAllSensorData() (*sensors.SensorData, error) {
 	return c.GetSensorData(sensors.GetAllSensorIDs())
@@ -202,4 +194,11 @@ func (c *DiplusClient) CompareAllSensors() error {
 	sensors.CompareRawVsParsed(responseBody, sensorData)
 
 	return nil
+}
+
+// Poll polls the Diplus API for sensor data
+func (c *DiplusClient) Poll() (*sensors.SensorData, error) {
+	c.logger.Debug("Polling Diplus API for sensor data...")
+	// For now, we use a minimal set of essential sensors.
+	return c.GetSensorData(sensors.GetSensorIDs())
 }

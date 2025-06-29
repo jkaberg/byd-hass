@@ -11,6 +11,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// SourceTypeGPS defines the source type for GPS data
+const SourceTypeGPS = "gps"
+
 // LocationData represents the data from termux-location
 type LocationData struct {
 	Latitude         float64   `json:"latitude"`

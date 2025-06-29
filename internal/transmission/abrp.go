@@ -1,10 +1,14 @@
 package transmission
 
 import (
-	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jkaberg/byd-hass/internal/sensors"
@@ -40,7 +44,7 @@ import (
 // ABRPTransmitter transmits telemetry data to A Better Route Planner
 type ABRPTransmitter struct {
 	apiKey     string
-	vehicleKey string
+	token      string
 	httpClient *http.Client
 	logger     *logrus.Logger
 }
@@ -82,12 +86,45 @@ type ABRPTelemetry struct {
 }
 
 // NewABRPTransmitter creates a new ABRP transmitter
-func NewABRPTransmitter(apiKey, vehicleKey string, logger *logrus.Logger) *ABRPTransmitter {
+func NewABRPTransmitter(apiKey, token string, logger *logrus.Logger) *ABRPTransmitter {
+	// Custom dialer with a specific DNS resolver to avoid issues on Termux/Android
+	dialer := &net.Dialer{
+		Resolver: &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := net.Dialer{
+					Timeout: time.Millisecond * time.Duration(5000), // 5 seconds
+				}
+				// Force DNS resolution via a public DNS to avoid local resolver issues
+				// Attempt to connect to primary DNS (Cloudflare)
+				conn, err := d.DialContext(ctx, "udp", "1.1.1.1:53")
+				if err != nil {
+					// Fallback to secondary DNS (Google)
+					logger.WithError(err).Warn("Primary DNS failed, trying fallback")
+					return d.DialContext(ctx, "udp", "8.8.8.8:53")
+				}
+				return conn, err
+			},
+		},
+	}
+
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialer.DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+
 	return &ABRPTransmitter{
-		apiKey:     apiKey,
-		vehicleKey: vehicleKey,
+		apiKey: apiKey,
+		token:  token,
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			Transport: transport,
 		},
 		logger: logger,
 	}
@@ -104,18 +141,20 @@ func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
 		return fmt.Errorf("failed to marshal ABRP telemetry: %w", err)
 	}
 
-	// Build API URL
-	url := fmt.Sprintf("https://api.iternio.com/1/tlm/send?token=%s&api_key=%s",
-		t.vehicleKey, t.apiKey)
+	// The API expects a urlencoded form post
+	form := url.Values{}
+	form.Add("tlm", string(payload))
+
+	apiURL := fmt.Sprintf("https://api.iternio.com/1/tlm/send?api_key=%s&token=%s", t.apiKey, t.token)
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to create ABRP request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "byd-hass/1.0.0")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	// Send request
 	resp, err := t.httpClient.Do(req)
@@ -129,19 +168,15 @@ func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
 		return fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
 	}
 
+	// Log the entire telemetry object for full visibility
+	logPayload, err := json.Marshal(telemetry)
+	if err != nil {
+		t.logger.WithError(err).Warn("Failed to marshal telemetry for logging")
+	}
+
 	t.logger.WithFields(logrus.Fields{
-		"soc":              telemetry.SOC,
-		"speed":            telemetry.Speed,
-		"power":            telemetry.Power,
-		"is_charging":      telemetry.IsCharging,
-		"is_parked":        telemetry.IsParked,
-		"lat":              telemetry.Lat,
-		"lon":              telemetry.Lon,
-		"ext_temp":         telemetry.ExtTemp,
-		"batt_temp":        telemetry.BattTemp,
-		"est_range":        telemetry.EstBatteryRange,
-		"tire_pressure_fl": telemetry.TirePressureFL,
-		"status_code":      resp.StatusCode,
+		"status_code": resp.StatusCode,
+		"payload":     string(logPayload),
 	}).Debug("Successfully transmitted to ABRP")
 
 	return nil
@@ -176,8 +211,17 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 	if data.Location != nil {
 		telemetry.Lat = &data.Location.Latitude
 		telemetry.Lon = &data.Location.Longitude
-		telemetry.Elevation = &data.Location.Altitude
-		telemetry.Heading = &data.Location.Bearing
+		if data.Location.Altitude > 0 {
+			telemetry.Elevation = &data.Location.Altitude
+		}
+		if data.Location.Bearing > 0 {
+			telemetry.Heading = &data.Location.Bearing
+		}
+	}
+
+	// High priority - Power from engine
+	if data.EnginePower != nil {
+		telemetry.Power = data.EnginePower
 	}
 
 	// High priority - Charging status and power
@@ -185,41 +229,11 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 		isCharging := *data.ChargingStatus > 0
 		telemetry.IsCharging = &isCharging
 
-		// Estimate charging power when charging (negative values for ABRP)
-		if isCharging {
-			// Estimate charging power based on typical BYD charging rates
-			// This is a rough estimate - actual power data would be better
-			chargingPower := -22.0 // Assume 22kW AC charging as default
-			if data.ChargeGunState != nil && *data.ChargeGunState == 2 {
-				// Connected to charging port - could be DC fast charging
-				chargingPower = -50.0 // Assume DC fast charging
-				isDCFC := true
-				telemetry.IsDCFC = &isDCFC
-			}
-			telemetry.Power = &chargingPower
+		// Determine if DCFC based on power draw
+		if isCharging && telemetry.Power != nil && *telemetry.Power <= -50.0 {
+			isDCFC := true
+			telemetry.IsDCFC = &isDCFC
 		}
-	}
-
-	// High priority - Driving power consumption (positive values)
-	if data.Speed != nil && *data.Speed > 0 && data.EnginePower != nil {
-		// Use actual engine power if available
-		telemetry.Power = data.EnginePower
-	} else if data.Speed != nil && *data.Speed > 0 {
-		// Estimate driving power consumption based on speed and conditions
-		baseConsumption := 15.0                     // Base consumption in kW
-		speedFactor := (*data.Speed / 100.0) * 10.0 // Additional consumption based on speed
-
-		// Adjust for temperature (HVAC usage)
-		tempAdjustment := 0.0
-		if data.OutsideTemperature != nil {
-			tempC := *data.OutsideTemperature
-			if tempC < 0 || tempC > 30 {
-				tempAdjustment = 5.0 // Additional power for heating/cooling
-			}
-		}
-
-		estimatedPower := baseConsumption + speedFactor + tempAdjustment
-		telemetry.Power = &estimatedPower
 	}
 
 	// Lower priority - Battery information
@@ -238,9 +252,11 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 		telemetry.Voltage = data.MaxBatteryVoltage
 
 		// Estimate current from power and voltage (I = P / V)
-		if telemetry.Power != nil && *data.MaxBatteryVoltage > 0 {
-			estimatedCurrent := (*telemetry.Power * 1000) / *data.MaxBatteryVoltage // Convert kW to W, then to A
-			telemetry.Current = &estimatedCurrent
+		if telemetry.Power != nil && telemetry.Voltage != nil && *telemetry.Voltage > 0 {
+			// Power is in kW, convert to W for calculation
+			powerWatts := *telemetry.Power * 1000
+			current := powerWatts / *telemetry.Voltage
+			telemetry.Current = &current
 		}
 	}
 
@@ -248,57 +264,19 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 	if data.OutsideTemperature != nil {
 		telemetry.ExtTemp = data.OutsideTemperature
 	}
-
 	if data.AvgBatteryTemp != nil {
 		telemetry.BattTemp = data.AvgBatteryTemp
 	}
-
 	if data.CabinTemperature != nil {
 		telemetry.CabinTemp = data.CabinTemperature
 	}
 
-	// Lower priority - Vehicle odometer
+	// Lower priority - Odometer
 	if data.Mileage != nil {
 		telemetry.Odometer = data.Mileage
 	}
 
-	// Lower priority - Estimated battery range
-	if data.BatteryPercentage != nil && data.BatteryCapacity != nil {
-		// Calculate estimated range considering current conditions
-		remainingCapacity := (*data.BatteryCapacity * *data.BatteryPercentage) / 100
-		efficiency := 5.0 // km/kWh baseline efficiency
-
-		// Adjust efficiency for temperature
-		if data.OutsideTemperature != nil {
-			tempC := *data.OutsideTemperature
-			if tempC < 0 {
-				efficiency *= 0.75 // Significant reduction in cold weather
-			} else if tempC < 10 {
-				efficiency *= 0.85 // Moderate reduction in cool weather
-			} else if tempC > 35 {
-				efficiency *= 0.90 // Slight reduction in very hot weather
-			}
-		}
-
-		// Adjust efficiency for speed (if driving)
-		if data.Speed != nil && *data.Speed > 0 {
-			if *data.Speed > 100 {
-				efficiency *= 0.8 // High speed reduces efficiency
-			} else if *data.Speed > 80 {
-				efficiency *= 0.9 // Moderate speed impact
-			}
-		}
-
-		estimatedRange := remainingCapacity * efficiency
-		telemetry.EstBatteryRange = &estimatedRange
-	}
-
-	// Lower priority - HVAC information
-	if data.DriverACTemperature != nil {
-		telemetry.HVACSetpoint = data.DriverACTemperature
-	}
-
-	// Estimate HVAC power consumption
+	// Lower priority - HVAC data
 	if data.ACStatus != nil && *data.ACStatus > 0 {
 		// Estimate HVAC power based on temperature difference and fan speed
 		hvacPower := 2.0 // Base HVAC power consumption in kW
@@ -308,7 +286,6 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 			if tempDiff < 0 {
 				tempDiff = -tempDiff // Absolute difference
 			}
-
 			// More temperature difference = more power needed
 			hvacPower += (tempDiff / 10.0) * 1.0 // 1kW per 10°C difference
 		}
@@ -318,7 +295,6 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 			fanMultiplier := *data.FanSpeedLevel / 3.0 // Assume max fan level is 3
 			hvacPower *= fanMultiplier
 		}
-
 		telemetry.HVACPower = &hvacPower
 	}
 
@@ -328,25 +304,18 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 		pressureKPa := (*data.LeftFrontTirePressure * 0.01) * 100 // bar to kPa
 		telemetry.TirePressureFL = &pressureKPa
 	}
-
 	if data.RightFrontTirePressure != nil {
 		pressureKPa := (*data.RightFrontTirePressure * 0.01) * 100
 		telemetry.TirePressureFR = &pressureKPa
 	}
-
 	if data.LeftRearTirePressure != nil {
 		pressureKPa := (*data.LeftRearTirePressure * 0.01) * 100
 		telemetry.TirePressureRL = &pressureKPa
 	}
-
 	if data.RightRearTirePressure != nil {
 		pressureKPa := (*data.RightRearTirePressure * 0.01) * 100
 		telemetry.TirePressureRR = &pressureKPa
 	}
-
-	// Lower priority - State of Health (estimate based on capacity vs new capacity)
-	// This would require knowing the original battery capacity when new
-	// For now, we'll skip this as we don't have historical data
 
 	return telemetry
 }
@@ -359,9 +328,9 @@ func (t *ABRPTransmitter) SetTimeout(timeout time.Duration) {
 // GetConnectionStatus returns detailed connection status for diagnostics
 func (t *ABRPTransmitter) GetConnectionStatus() map[string]interface{} {
 	return map[string]interface{}{
-		"connected":       t.IsConnected(),
-		"api_key_set":     t.apiKey != "",
-		"vehicle_key_set": t.vehicleKey != "",
-		"timeout":         t.httpClient.Timeout,
+		"connected":   t.IsConnected(),
+		"api_key_set": t.apiKey != "",
+		"token_set":   t.token != "",
+		"timeout":     t.httpClient.Timeout,
 	}
 }

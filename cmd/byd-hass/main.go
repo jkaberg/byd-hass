@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -23,19 +24,7 @@ import (
 // version is injected at build time via ldflags
 var version = "dev"
 
-// Application intervals
-const (
-	DiplusPollInterval   = 15 * time.Second
-	ABRPTransmitInterval = 10 * time.Second
-	MQTTTransmitInterval = 60 * time.Second
-)
-
-// Operation timeouts to prevent blocking
-const (
-	DiplusTimeout = 8 * time.Second // Timeout for Diplus API calls
-	MQTTTimeout   = 5 * time.Second // Timeout for MQTT operations
-	ABRPTimeout   = 8 * time.Second // Timeout for ABRP API calls
-)
+// All global intervals / timeouts are defined in internal/config/defaults.go.
 
 // SharedState holds application state with proper synchronization
 type SharedState struct {
@@ -87,7 +76,13 @@ func (s *SharedState) ClearABRPFlag() {
 
 func main() {
 	// Parse command line flags
-	cfg := parseFlags()
+	cfg, debugMode := parseFlags()
+
+	// If debug mode is enabled, run diagnostics and exit
+	if debugMode {
+		runDebugMode(cfg)
+		os.Exit(0)
+	}
 
 	// Setup logger
 	logger := setupLogger(cfg.Verbose)
@@ -95,9 +90,9 @@ func main() {
 	logger.WithFields(logrus.Fields{
 		"version":              version,
 		"device_id":            cfg.DeviceID,
-		"diplus_poll_interval": DiplusPollInterval,
-		"abrp_interval":        ABRPTransmitInterval,
-		"mqtt_interval":        MQTTTransmitInterval,
+		"diplus_poll_interval": config.DiplusPollInterval,
+		"abrp_interval":        config.ABRPTransmitInterval,
+		"mqtt_interval":        config.MQTTTransmitInterval,
 	}).Info("Starting BYD-HASS")
 
 	// Create application context
@@ -109,12 +104,19 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Initialize core components
-	diplusClient := api.NewDiplusClient("http://localhost:8988/api/getDiPars", logger)
+	diplusURL := fmt.Sprintf("http://%s/api/getDiPars", cfg.DiplusURL)
+	diplusClient := api.NewDiplusClient(diplusURL, logger)
 	cacheManager := cache.NewManager(logger)
-	locationProvider := location.NewTermuxLocationProvider(logger)
 
-	// Ensure location provider is properly shut down
-	defer locationProvider.Stop()
+	// Initialize location provider only if ABRP location uploads are enabled
+	var locationProvider *location.TermuxLocationProvider
+	if cfg.ABRPLocation {
+		locationProvider = location.NewTermuxLocationProvider(logger)
+		// Ensure location provider is properly shut down
+		defer locationProvider.Stop()
+	} else {
+		logger.Debug("ABRP location upload disabled; skipping GPS initialization")
+	}
 
 	// Initialize shared state
 	sharedState := &SharedState{
@@ -142,10 +144,10 @@ func main() {
 	}
 
 	// Setup ABRP transmitter if configured
-	if cfg.ABRPAPIKey != "" && cfg.ABRPVehicleKey != "" {
+	if cfg.ABRPAPIKey != "" && cfg.ABRPToken != "" {
 		abrpTransmitter = transmission.NewABRPTransmitter(
 			cfg.ABRPAPIKey,
-			cfg.ABRPVehicleKey,
+			cfg.ABRPToken,
 			logger,
 		)
 
@@ -159,39 +161,23 @@ func main() {
 	}
 
 	// Create tickers for different intervals
-	diplusTicker := time.NewTicker(DiplusPollInterval)
+	diplusTicker := time.NewTicker(config.DiplusPollInterval)
 	defer diplusTicker.Stop()
 
 	var abrpTicker *time.Ticker
 	if abrpTransmitter != nil {
-		abrpTicker = time.NewTicker(ABRPTransmitInterval)
+		abrpTicker = time.NewTicker(config.ABRPTransmitInterval)
 		defer abrpTicker.Stop()
 	}
 
 	var mqttTicker *time.Ticker
 	if mqttTransmitter != nil {
-		mqttTicker = time.NewTicker(MQTTTransmitInterval)
+		mqttTicker = time.NewTicker(config.MQTTTransmitInterval)
 		defer mqttTicker.Stop()
 	}
 
-	// Initial poll to populate data (non-blocking)
-	go pollAndFlagChangesAsync(ctx, diplusClient, locationProvider, cacheManager, sharedState, logger)
-
-	// For MQTT, try to publish discovery config immediately, even without sensor data
-	if mqttTransmitter != nil {
-		go func() {
-			logger.Info("Publishing MQTT discovery configuration...")
-			// Create empty sensor data just to trigger discovery config publishing
-			emptySensorData := &sensors.SensorData{
-				Timestamp: time.Now(),
-			}
-			if err := transmitToMQTTAsync(ctx, mqttTransmitter, emptySensorData, logger); err != nil {
-				logger.WithError(err).Warn("Initial MQTT discovery config publishing failed, will retry with real data")
-			} else {
-				logger.Info("MQTT discovery configuration published successfully")
-			}
-		}()
-	}
+	// Initial poll to populate data
+	initialDataPollAndTransmit(ctx, diplusClient, locationProvider, cacheManager, sharedState, mqttTransmitter, abrpTransmitter, logger)
 
 	logger.Info("BYD-HASS started successfully")
 
@@ -255,8 +241,8 @@ func main() {
 	}
 }
 
-func parseFlags() *config.Config {
-	cfg := &config.Config{}
+func parseFlags() (*config.Config, bool) {
+	cfg := config.GetDefaultConfig()
 
 	// Version flag
 	showVersion := flag.Bool("version", false, "Show version and exit")
@@ -265,16 +251,20 @@ func parseFlags() *config.Config {
 	debug := flag.Bool("debug", false, "Run comprehensive sensor debugging and exit")
 
 	flag.StringVar(&cfg.MQTTUrl, "mqtt-url",
-		getEnvOrDefault("BYD_HASS_MQTT_URL", ""),
+		getEnvOrDefault("BYD_HASS_MQTT_URL", cfg.MQTTUrl),
 		"MQTT URL (supports ws://, wss://, mqtt://, mqtts://)")
 
+	flag.StringVar(&cfg.DiplusURL, "diplus-url",
+		getEnvOrDefault("BYD_HASS_DIPLUS_URL", cfg.DiplusURL),
+		"Di-Plus API URL (host:port)")
+
 	flag.StringVar(&cfg.ABRPAPIKey, "abrp-api-key",
-		getEnvOrDefault("BYD_HASS_ABRP_API_KEY", ""),
+		getEnvOrDefault("BYD_HASS_ABRP_API_KEY", cfg.ABRPAPIKey),
 		"ABRP API key for telemetry")
 
-	flag.StringVar(&cfg.ABRPVehicleKey, "abrp-vehicle-key",
-		getEnvOrDefault("BYD_HASS_ABRP_VEHICLE_KEY", ""),
-		"ABRP vehicle identifier key")
+	flag.StringVar(&cfg.ABRPToken, "abrp-token",
+		getEnvOrDefault("BYD_HASS_ABRP_TOKEN", cfg.ABRPToken),
+		"ABRP user token for telemetry")
 
 	flag.StringVar(&cfg.DeviceID, "device-id",
 		getEnvOrDefault("BYD_HASS_DEVICE_ID", generateDeviceID()),
@@ -285,8 +275,13 @@ func parseFlags() *config.Config {
 		"Enable verbose logging")
 
 	flag.StringVar(&cfg.DiscoveryPrefix, "discovery-prefix",
-		getEnvOrDefault("BYD_HASS_DISCOVERY_PREFIX", "homeassistant"),
+		getEnvOrDefault("BYD_HASS_DISCOVERY_PREFIX", cfg.DiscoveryPrefix),
 		"Home Assistant discovery prefix")
+
+	// Disable GPS location provider if explicitly requested (location is ON by default).
+	disableLocation := flag.Bool("disable-location",
+		getEnvOrDefault("BYD_HASS_DISABLE_LOCATION", "false") == "true",
+		"Disable GPS location (Termux) and omit coordinates from MQTT/ABRP telemetry")
 
 	flag.Parse()
 
@@ -295,13 +290,10 @@ func parseFlags() *config.Config {
 		os.Exit(0)
 	}
 
-	// Handle debug mode
-	if *debug {
-		runDebugMode()
-		os.Exit(0)
-	}
+	// Invert disable flag to set ABRPLocation.
+	cfg.ABRPLocation = !*disableLocation
 
-	return cfg
+	return cfg, *debug
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -341,7 +333,7 @@ func pollAndFlagChangesAsync(
 	logger *logrus.Logger,
 ) {
 	// Create timeout context for this operation
-	timeoutCtx, cancel := context.WithTimeout(ctx, DiplusTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, config.DiplusTimeout)
 	defer cancel()
 
 	logger.Debug("Starting sensor polling (async)...")
@@ -365,67 +357,46 @@ func pollSensorDataAsync(
 	sharedState *SharedState,
 	logger *logrus.Logger,
 ) error {
-	// Channel to receive sensor data
-	sensorDataChan := make(chan *sensors.SensorData, 1)
-	errorChan := make(chan error, 1)
+	ctx, cancel := context.WithTimeout(ctx, config.DiplusTimeout)
+	defer cancel()
 
-	// Start sensor data fetch in goroutine
-	go func() {
-		defer close(sensorDataChan)
-		defer close(errorChan)
+	logger.Info("Polling Diplus for new sensor data...")
 
-		// Try extended polling first, fallback to default if needed
-		sensorData, err := diplusClient.GetExtendedSensorData()
-		if err != nil {
-			logger.WithError(err).Debug("Extended polling failed, using default polling")
-			sensorData, err = diplusClient.GetDefaultSensorData()
-			if err != nil {
-				errorChan <- fmt.Errorf("failed to poll sensor data: %w", err)
-				return
-			}
+	// Poll sensor data using the standard poll method
+	sensorData, err := diplusClient.Poll()
+	if err != nil {
+		return fmt.Errorf("failed to poll sensor data: %w", err)
+	}
+
+	// ---- START TEMPORARY DEBUG LOG ----
+	if logger.IsLevelEnabled(logrus.DebugLevel) {
+		jsonData, err := json.Marshal(sensorData)
+		if err == nil {
+			logger.WithField("raw_polled_data", string(jsonData)).Debug("Dumping raw polled sensor data")
 		}
+	}
+	// ---- END TEMPORARY DEBUG LOG ----
 
-		// Fetch location data (non-blocking from cache)
-		locationData, err := locationProvider.GetLocation()
-		if err != nil {
-			// Log as debug since location is fetched in background and may not be available immediately
-			logger.WithError(err).Debug("Location data not available yet")
-		} else {
+	// Enrich with location data if provider is available
+	if locationProvider != nil {
+		if locationData, err := locationProvider.GetLocation(); err == nil {
 			sensorData.Location = locationData
 			logger.WithFields(logrus.Fields{
-				"lat":      locationData.Latitude,
-				"lon":      locationData.Longitude,
-				"accuracy": locationData.Accuracy,
-			}).Debug("Location data included in sensor data")
+				"lat":       locationData.Latitude,
+				"lon":       locationData.Longitude,
+				"accuracy":  locationData.Accuracy,
+				"timestamp": locationData.Timestamp,
+			}).Info("Enriched with location data")
+		} else {
+			logger.WithError(err).Debug("Could not get location data")
 		}
+	}
 
-		sensorDataChan <- sensorData
-	}()
-
-	// Wait for completion or timeout
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("sensor polling timed out after %v", DiplusTimeout)
-	case err := <-errorChan:
-		if err != nil {
-			return err
-		}
-	case sensorData := <-sensorDataChan:
-		logger.WithField("sensors_active", len(sensors.GetNonNilFields(sensorData))).Debug("Polled sensor data")
-
-		// Check for changes and cache
-		changes := cacheManager.GetChanges(sensorData)
-		if len(changes) == 0 {
-			logger.Debug("No sensor changes detected")
-			// Explicitly nil the pointer if no changes, so we don't re-transmit old data
-			sharedState.UpdateData(nil)
-			return nil
-		}
-
-		logger.WithField("changed_sensors", len(changes)).Info("Sensor changes detected")
-
-		// Update latest sensor data
+	if cacheManager.Changed(sensorData) {
+		logger.Info("Sensor data has changed, updating state")
 		sharedState.UpdateData(sensorData)
+	} else {
+		logger.Info("Sensor data has not changed, no update needed")
 	}
 
 	return nil
@@ -438,7 +409,7 @@ func transmitToABRPAsync(
 	logger *logrus.Logger,
 ) error {
 	// Create timeout context for this operation
-	timeoutCtx, cancel := context.WithTimeout(ctx, ABRPTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, config.ABRPTimeout)
 	defer cancel()
 
 	// Channel to receive result
@@ -455,7 +426,7 @@ func transmitToABRPAsync(
 	// Wait for completion or timeout
 	select {
 	case <-timeoutCtx.Done():
-		return fmt.Errorf("ABRP transmission timed out after %v", ABRPTimeout)
+		return fmt.Errorf("ABRP transmission timed out after %v", config.ABRPTimeout)
 	case err := <-errorChan:
 		if err != nil {
 			return err
@@ -472,7 +443,7 @@ func transmitToMQTTAsync(
 	logger *logrus.Logger,
 ) error {
 	// Create timeout context for this operation
-	timeoutCtx, cancel := context.WithTimeout(ctx, MQTTTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, config.MQTTTimeout)
 	defer cancel()
 
 	// Channel to receive result
@@ -489,7 +460,7 @@ func transmitToMQTTAsync(
 	// Wait for completion or timeout
 	select {
 	case <-timeoutCtx.Done():
-		return fmt.Errorf("MQTT transmission timed out after %v", MQTTTimeout)
+		return fmt.Errorf("MQTT transmission timed out after %v", config.MQTTTimeout)
 	case err := <-errorChan:
 		if err != nil {
 			return err
@@ -499,21 +470,67 @@ func transmitToMQTTAsync(
 	}
 }
 
-// runDebugMode runs simple raw vs parsed value comparison
-func runDebugMode() {
-	logger := setupLogger(true) // Always verbose for debug mode
-	logger.Info("Starting BYD-HASS Raw vs Parsed Value Comparison")
+// initialDataPollAndTransmit performs the first poll and transmission synchronously at startup.
+func initialDataPollAndTransmit(
+	ctx context.Context,
+	diplusClient *api.DiplusClient,
+	locationProvider *location.TermuxLocationProvider,
+	cacheManager *cache.Manager,
+	sharedState *SharedState,
+	mqttTransmitter *transmission.MQTTTransmitter,
+	abrpTransmitter *transmission.ABRPTransmitter,
+	logger *logrus.Logger,
+) {
+	logger.Info("Performing initial data poll...")
 
-	// Create Diplus client
-	diplusClient := api.NewDiplusClient("http://localhost:8988/api/getDiPars", logger)
-
-	logger.Info("Comparing raw API values vs parsed sensor data...")
-
-	// Run comparison
-	if err := diplusClient.CompareAllSensors(); err != nil {
-		logger.WithError(err).Fatal("Failed to compare sensor values")
+	// Poll sensor data using the standard poll method
+	sensorData, err := diplusClient.Poll()
+	if err != nil {
+		logger.WithError(err).Error("Initial poll failed")
+		return
 	}
 
-	fmt.Println("\n✅ Comparison complete!")
-	fmt.Println("Review the output above to identify type mismatches and parsing failures.")
+	// Enrich with location data if provider is available
+	if locationProvider != nil {
+		if locationData, err := locationProvider.GetLocation(); err == nil {
+			sensorData.Location = locationData
+		}
+	}
+
+	sharedState.UpdateData(sensorData)
+	// Store snapshot in cache manager (always true on first call)
+	_ = cacheManager.Changed(sensorData)
+
+	if mqttTransmitter != nil {
+		logger.Info("Performing initial MQTT transmission...")
+		if err := transmitToMQTTAsync(ctx, mqttTransmitter, sensorData, logger); err != nil {
+			logger.WithError(err).Error("Initial MQTT transmission failed")
+		}
+	}
+
+	if abrpTransmitter != nil {
+		logger.Info("Performing initial ABRP transmission...")
+		if err := transmitToABRPAsync(ctx, abrpTransmitter, sensorData, logger); err != nil {
+			logger.WithError(err).Error("Initial ABRP transmission failed")
+		}
+	}
+}
+
+// runDebugMode runs simple raw vs parsed value comparison
+func runDebugMode(cfg *config.Config) {
+	logger := setupLogger(true) // Force verbose logging for debug mode
+	logger.Info("--- Running in Debug Mode ---")
+
+	diplusURL := fmt.Sprintf("http://%s/api/getDiPars", cfg.DiplusURL)
+	diplusClient := api.NewDiplusClient(diplusURL, logger)
+
+	// In debug mode, we might need more time to query all sensors
+	diplusClient.SetTimeout(30 * time.Second)
+
+	err := diplusClient.CompareAllSensors()
+	if err != nil {
+		logger.WithError(err).Fatal("Debug mode failed")
+	}
+
+	logger.Info("--- Debug Mode Finished ---")
 }

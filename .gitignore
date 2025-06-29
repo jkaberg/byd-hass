@@ -1,0 +1,4 @@
+# Ignore compiled binary output
+byd-hass 
+
+.cursorrules
