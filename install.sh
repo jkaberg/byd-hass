@@ -58,10 +58,9 @@ echo "✅ Environment ready."
 
 # 2. Explain Manual Steps
 echo -e "\n${BLUE}2. Important Manual Steps Required:${NC}"
-echo -e "${YELLOW}   - You must install the 'Termux:Boot' app from F-Droid or Google Play.${NC}"
+echo -e "${YELLOW}   - You must install the Diplus, Termux:Boot and Termux:API apps from Github (see README.md),${NC}"
+echo -e "${YELLOW}   - and make sure you configured the apps according to the app instructions.${NC}"
 echo -e "${YELLOW}   - You must enable 'Wireless debugging' in Android Developer Options.${NC}"
-echo -e "${YELLOW}   - You must grant Termux, Termux:Boot and Termux:API to 'run on boot' (The app is called 'Deactive background start')
-# com.byd.appstartmanagement
 read -p "Press [Enter] to continue once you have completed these steps..."
 
 # 3a. Connect ADB to self
@@ -70,7 +69,7 @@ adb connect "$ADB_SERVER"
 echo "✅ ADB connected."
 
 # 3b. Enable background start for Termux, Termux:Boot and Termux:API
-echo -e "\n${BLUE}3b. opening 'Deactive background start' app, uncheck Termux, Termux:Boot and Termux:API and hit OK...${NC}"
+echo -e "\n${BLUE}3b. Opening 'Deactive background start' app, uncheck Termux, Termux:Boot and Termux:API and hit OK...${NC}"
 adb -s "$ADB_SERVER" shell "am start -n am start -n com.byd.appstartmanagement/.frame.AppStartManagement"
 read -p "Press [Enter] to continue once you have completed these steps..."
 
