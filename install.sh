@@ -175,7 +175,7 @@ fi
 while true; do
     echo "[\$(date)] Acquiring wake lock and starting byd-hass service..."
     termux-wake-lock
-    "$BINARY_PATH"
+    $BINARY_PATH
     echo "[\$(date)] Service stopped with exit code \$?. Restarting in 30 seconds..."
     sleep 30
 done >> "$LOG_FILE"
