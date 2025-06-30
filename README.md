@@ -1,6 +1,6 @@
 # BYD-HASS
 
-BYD-HASS is a small Go program that turns data from the BYD "Diplus" API into MQTT messages that Home Assistant can understand, and (optionally) telemetry for A Better Route Planner (ABRP).  It is built as a single static binary so it can run in the car's infotainment using Termux.
+BYD-HASS is a small Go program that turns data from the Diplus API into MQTT messages that Home Assistant can understand, and (optionally) telemetry for A Better Route Planner (ABRP).  It is built as a single static binary so it can run in the car's infotainment using Termux.
 
 ## How it works
 
