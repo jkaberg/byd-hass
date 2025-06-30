@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jkaberg/byd-hass/internal/abrpapp"
 	"github.com/jkaberg/byd-hass/internal/api"
 	"github.com/jkaberg/byd-hass/internal/cache"
 	"github.com/jkaberg/byd-hass/internal/config"
@@ -160,6 +161,12 @@ func main() {
 		logger.WithField("abrp_status", status).Info("ABRP transmitter configured")
 	}
 
+	// Initialise ABRP app checker if required
+	var abrpAppChecker *abrpapp.Checker
+	if cfg.RequireABRPApp {
+		abrpAppChecker = abrpapp.NewChecker(logger)
+	}
+
 	if mqttTransmitter == nil && abrpTransmitter == nil {
 		logger.Warn("No transmitters configured, data will only be cached")
 	}
@@ -206,6 +213,12 @@ func main() {
 		}():
 			latestData := sharedState.GetLatestData()
 			if abrpTransmitter != nil && latestData != nil && sharedState.HasUnsentABRPChanges() {
+				// If ABRP app must be running, verify via checker
+				if cfg.RequireABRPApp && abrpAppChecker != nil && !abrpAppChecker.IsRunning() {
+					logger.Debug("ABRP Android app not running, skipping telemetry")
+					break
+				}
+
 				// ABRP transmission (non-blocking)
 				go func(data *sensors.SensorData) {
 					if err := transmitToABRPAsync(ctx, abrpTransmitter, data, logger); err != nil {
@@ -286,6 +299,12 @@ func parseFlags() (*config.Config, bool) {
 	disableLocation := flag.Bool("disable-location",
 		getEnvOrDefault("BYD_HASS_DISABLE_LOCATION", "false") == "true",
 		"Disable GPS location (Termux) and omit coordinates from MQTT/ABRP telemetry")
+
+	// ABRP app requirement flag (default true)
+	envRequireAbrp := getEnvOrDefault("BYD_HASS_REQUIRE_ABRP_APP", "true")
+	requireAbrpDefault := envRequireAbrp != "false" && envRequireAbrp != "0"
+	flag.BoolVar(&cfg.RequireABRPApp, "require-abrp-app", requireAbrpDefault,
+		"Require ABRP Android app to be running before sending telemetry (default true)")
 
 	flag.Parse()
 

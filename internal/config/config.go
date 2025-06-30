@@ -22,6 +22,13 @@ type Config struct {
 	// Application Configuration
 	Verbose bool `json:"verbose"` // Enable verbose logging
 
+	// ABRP Application Requirement
+	// When true, telemetry will only be transmitted to ABRP when the Android
+	// application "com.iternio.abrpapp" is detected to be running via ADB.
+	// This can be toggled at runtime through the "-require-abrp-app" CLI flag
+	// or the "BYD_HASS_REQUIRE_ABRP_APP" environment variable.
+	RequireABRPApp bool `json:"require_abrp_app"`
+
 	// API Configuration
 	DiplusURL       string `json:"diplus_url"`       // Di-Plus API URL
 	ExtendedPolling bool   `json:"extended_polling"` // Use extended sensor polling for more data
@@ -46,6 +53,7 @@ func GetDefaultConfig() *Config {
 		ABRPEnhanced:    true,    // Use enhanced ABRP data by default
 		ABRPLocation:    true,    // Location ENABLED by default
 		ABRPVehicleType: "byd:*", // Generic BYD vehicle type
+		RequireABRPApp:  true,
 	}
 }
 
