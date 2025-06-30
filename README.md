@@ -19,12 +19,14 @@ curl -sSL https://raw.githubusercontent.com/jkaberg/byd-hass/main/install.sh | b
 The installer downloads the binary, asks for basic settings, and configures Termux:Boot so the program starts automatically and keeps running indefinitely.
 
 Requirements:
+- ADB over wireless enabled in the car
 - [Diplus app](http://lanye.pw/di/) running and reachable on `localhost:8988`
 - [Termux](https://termux.com/) plus the [Termux:Boot](https://github.com/termux/termux-boot) add-on so the program can start automatically
 - [ABRP Android app](https://play.google.com/store/apps/details?id=com.iternio.abrpapp) running in the background (only required if you enable ABRP telemetry or leave `-require-abrp-app` at its default `true`)
 - [Termux:API](https://github.com/termux/termux-api) (for location)
 - An MQTT broker – normally the one already used by Home Assistant (tip: if you're gonna use this while traveling, consider [MQTT over Websocket](https://cedalo.com/blog/enabling-websockets-over-mqtt-with-mosquitto/))
 
+There are various ways to set this up, for now I wont provide an how-to on setup of these tools and it's up to you to figure it out.
 ---
 
 ### Installer script
