@@ -63,27 +63,28 @@ This project is not affiliated with BYD, the Diplus authors, Home Assistant, or 
 
 ## Estimated data usage (Wi-Fi/Cellular)
 
-> The figures below are **ball-park estimates** intended to help you plan for mobile data usage when running `byd-hass` on an always-on Android device.  Actual usage will vary with driving style, connection quality, MQTT broker behaviour, etc.
+> The figures below are **ball-park estimates** intended to help you plan for mobile data usage when running `byd-hass` on the infotainment.  Actual usage will vary with driving style, connection quality, MQTT broker behaviour, etc.
 
 ### How the numbers were derived
 
 1. **Message sizes** – The program currently sends two types of outbound traffic:
    • **MQTT state payload** (`byd_car/<device>/state`).  A full JSON state containing ~20 numeric/boolean fields plus topic and protocol overhead is ≈ **300 bytes** per publish.
    • **ABRP telemetry call** (HTTPS `POST`).  The documented ABRP payload is smaller than the MQTT state but the TLS, HTTP and header overheads are higher.  In practice one update is ≈ **500 bytes** on the wire.
-   (MQTT PING packets are only 2 bytes and are ignored here.)
+   • **MQTT keep-alive (PINGREQ + PINGRESP)**.  Over WebSocket/TCP a full round-trip (frame + TCP/IP headers each way) is ≈ **100 bytes**.
 2. **Send intervals** –
    • **MQTT**: every **60 s** *but only while at least one value has changed*.  When the car is parked nothing changes, so the broker typically only sees a retain/heartbeat publish once an hour (Termux network restarts, SOC drift, etc.).  During driving almost every minute triggers an update because speed, mileage, etc. change.
    • **ABRP**: fixed **10 s** interval while driving and completely **disabled while parked**.
+   • **MQTT keep-alive**: one ping round-trip every **60 s** (default client keep-alive) 24 × 7, regardless of driving.
 3. **Downtime assumption** – Cars spend most of the time parked.  For a "typical commuter" profile we assume **1 h of driving per day** and **23 h parked**.  A pessimistic worst-case and an optimistic best-case are also shown.
 
 ### Monthly totals (30-day month)
 
-| Scenario | Driving / day | MQTT | ABRP | Total |
-| -------- | ------------- | ---- | ---- | ----- |
-| **Typical** (default) | 1 h | 60 msg × 300 B × 30 d = **0.5 MB** | 360 msg × 500 B × 30 d = **5.4 MB** | **≈ 6 MB** |
-| Light usage | 30 min | 0.25 MB | 2.7 MB | **≈ 3 MB** |
-| Heavy usage | 4 h | 2 MB | 21.6 MB | **≈ 24 MB** |
+| Scenario | Driving / day | MQTT state | ABRP | MQTT ping | Total |
+| -------- | ------------- | ---------- | ----- | --------- | ----- |
+| **Typical** (default) | 1 h | 60 msg × 300 B × 30 d = **0.5 MB** | 360 msg × 500 B × 30 d = **5.4 MB** | 1 440 ping × 100 B × 30 d = **4.3 MB** | **≈ 10 MB** |
+| Light usage | 30 min | 0.25 MB | 2.7 MB | 4.3 MB | **≈ 7 MB** |
+| Heavy usage | 4 h | 2 MB | 21.6 MB | 4.3 MB | **≈ 28 MB** |
 
-Even in the heavy-usage scenario the program stays well below 30 MB ⁄ month, which is a tiny fraction of a typical cellular data plan.
+Even in the heavy-usage scenario the program stays under 30 MB ⁄ month, which is still only ~3 % of the 1 GB cellular data plan BYD provides.
 
 *Tip: if you do not need ABRP telemetry you can disable it (omit `-abrp-api-key`) and reduce the data usage by ~90 %.*
