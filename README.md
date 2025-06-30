@@ -21,7 +21,7 @@ The installer downloads the binary, asks for basic settings, and configures Term
 Requirements:
 - [Diplus app](http://lanye.pw/di/) running and reachable on `localhost:8988`
 - [Termux](https://termux.com/) plus the [Termux:Boot](https://github.com/termux/termux-boot) add-on so the program can start automatically
-- [Termux:API](https://github.com/termux/termux-api) (for future features)
+- [Termux:API](https://github.com/termux/termux-api) (for location)
 - An MQTT broker – normally the one already used by Home Assistant
 
 ---
