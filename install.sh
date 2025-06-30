@@ -141,9 +141,9 @@ if [ "$CONFIG_CHANGED" = true ]; then
   read -p "   - MQTT WebSocket URL (e.g., ws://user:pass@host:port): " MQTT_URL || true
   read -p "   - ABRP API Key (optional): " ABRP_API_KEY || true
   if [ -n "$ABRP_API_KEY" ]; then
-    read -p "   - ABRP Vehicle Key: " ABRP_VEHICLE_KEY || true
+    read -p "   - ABRP User Token: " ABRP_TOKEN || true
   else
-    ABRP_VEHICLE_KEY=""
+    ABRP_TOKEN=""
   fi
   read -p "   - Enable verbose logging? (y/N): " VERBOSE_INPUT || true
   VERBOSE=$([ "${VERBOSE_INPUT,,}" == "y" ] && echo "true" || echo "false")
@@ -154,7 +154,7 @@ if [ "$CONFIG_CHANGED" = true ]; then
 # Configuration for byd-hass service
 export BYD_HASS_MQTT_URL='$MQTT_URL'
 export BYD_HASS_ABRP_API_KEY='$ABRP_API_KEY'
-export BYD_HASS_ABRP_VEHICLE_KEY='$ABRP_VEHICLE_KEY'
+export BYD_HASS_ABRP_TOKEN='$ABRP_TOKEN'
 export BYD_HASS_VERBOSE='$VERBOSE'
 EOF
   echo "✅ Config file saved at $CONFIG_PATH"
