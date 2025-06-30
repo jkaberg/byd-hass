@@ -1,14 +1,14 @@
 # BYD-HASS
 
-BYD-HASS is a small Go program that turns data from the BYD "Diplus" API into MQTT messages that Home Assistant can understand, and (optionally) telemetry for A Better Route Planner (ABRP).  It is built as a single static binary so it can run on an Android device under Termux while the car is parked.
+BYD-HASS is a small Go program that turns data from the BYD "Diplus" API into MQTT messages that Home Assistant can understand, and (optionally) telemetry for A Better Route Planner (ABRP).  It is built as a single static binary so it can run in the car's infotainment using Termux.
 
 ## How it works
 
-1. Every 15 seconds the program calls `http://localhost:8988/api/getDiPars` provided by the Diplus app.
-2. Values are cached in memory.  Nothing is sent unless a value has changed since the last time it was transmitted.
+1. Every 15 seconds `byd-hass` calls `http://localhost:8988/api/getDiPars` provided by the Diplus app.
+2. Values are cached in memory. Nothing is sent unless a value has changed since the last time it was transmitted.
 3. Changed values are published:
-   - to MQTT every 60 seconds so that Home Assistant can create sensors automatically (MQTT Discovery).
-   - to ABRP every 10 seconds if an API key **and user token** are supplied **and** the ABRP Android app is running (can be disabled with `-require-abrp-app=false`).
+   - to MQTT every 60 seconds and are discovered by Home Assistant
+   - to ABRP every 10 seconds if an ABRP API key and user token are supplied **and** the ABRP Android app is running (can be disabled with `-require-abrp-app=false`).
 
 ## Quick start (Termux)
 
@@ -16,7 +16,7 @@ BYD-HASS is a small Go program that turns data from the BYD "Diplus" API into MQ
 curl -sSL https://raw.githubusercontent.com/jkaberg/byd-hass/main/install.sh | bash
 ```
 
-The installer downloads the binary, asks for basic settings, and configures Termux:Boot so the program starts automatically.
+The installer downloads the binary, asks for basic settings, and configures Termux:Boot so the program starts automatically and keeps running indefinitely.
 
 Requirements:
 - [Diplus app](http://lanye.pw/di/) running and reachable on `localhost:8988`
@@ -47,7 +47,7 @@ Settings can be supplied as command-line flags or environment variables (prefix 
 
 ## Home Assistant sensors
 
-When connected to MQTT, Home Assistant automatically discovers a single device with many entities such as battery %, speed, mileage, lock state, and more.
+When connected to MQTT, Home Assistant automatically discovers a single device with many entities such as battery %, speed, mileage, lock state, and more. See picture:
 
 ![Example sensors in Home Assistant](docs/pictures/mqtt-2025-06-30.png)
 

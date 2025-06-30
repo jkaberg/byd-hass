@@ -3,6 +3,12 @@ name: Build and Release
 on:
   push:
     branches: [ main ]
+    # Only run the workflow when Go source or build-related files change.
+    paths:
+      - '**/*.go'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '.github/workflows/build-and-release.yml'
   workflow_dispatch:
 
 jobs:
