@@ -26,7 +26,8 @@ Requirements:
 - [Termux:API](https://github.com/termux/termux-api) (for location)
 - An MQTT broker – normally the one already used by Home Assistant (tip: if you're gonna use this while traveling, consider [MQTT over Websocket](https://cedalo.com/blog/enabling-websockets-over-mqtt-with-mosquitto/))
 
-There are various ways to set this up, for now I wont provide an how-to on setup of these tools and it's up to you to figure it out.
+**There are various ways to set this up, for now I wont provide an how-to on setup of these tools and it's up to you to figure it out.**
+
 ---
 
 ### Installer script
