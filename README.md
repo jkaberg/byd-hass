@@ -7,8 +7,8 @@ BYD-HASS is a small Go program that turns data from the BYD "Diplus" API into MQ
 1. Every 15 seconds the program calls `http://localhost:8988/api/getDiPars` provided by the Diplus app.
 2. Values are cached in memory.  Nothing is sent unless a value has changed since the last time it was transmitted.
 3. Changed values are published:
-   • to MQTT every 60 seconds so that Home Assistant can create sensors automatically (MQTT Discovery).
-   • to ABRP every 10 seconds if an API key **and user token** are supplied **and** the ABRP Android app is running (can be disabled with `-require-abrp-app=false`).
+   - to MQTT every 60 seconds so that Home Assistant can create sensors automatically (MQTT Discovery).
+   - to ABRP every 10 seconds if an API key **and user token** are supplied **and** the ABRP Android app is running (can be disabled with `-require-abrp-app=false`).
 
 ## Quick start (Termux)
 
