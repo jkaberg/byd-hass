@@ -201,13 +201,25 @@ func (t *ABRPTransmitter) buildTelemetryData(data *sensors.SensorData) ABRPTelem
 		telemetry.Power = data.EnginePower
 	}
 
-	// High priority - Charging status and power
-	if data.ChargingStatus != nil {
-		isCharging := *data.ChargingStatus > 0
-		telemetry.IsCharging = &isCharging
+	// High priority - Charging status and DC fast-charging detection based on instantaneous power
+	// ABRP expects negative values for battery charge (power flowing INTO the battery).
+	// The requirements for byd-hass are:
+	//   * is_charging  = 1 when power is above -1 kW (i.e. > −1).
+	//   * is_dcfc      = 1 when power is above -50 kW (i.e. > −50).
+	// These thresholds intentionally use "above" to mean numerically greater than
+	// the negative threshold value (closer to zero / less negative).
 
-		// Determine if DCFC based on power draw
-		if isCharging && telemetry.Power != nil && *telemetry.Power <= -50.0 {
+	if telemetry.Power != nil {
+		p := *telemetry.Power
+
+		// Determine overall charging flag
+		if p > -1.0 {
+			isCharging := true
+			telemetry.IsCharging = &isCharging
+		}
+
+		// Determine DC fast-charging flag
+		if p > -50.0 {
 			isDCFC := true
 			telemetry.IsDCFC = &isDCFC
 		}
