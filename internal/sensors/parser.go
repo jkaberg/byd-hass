@@ -69,8 +69,11 @@ func parseValueString(valString string, sensorData *SensorData) error {
 			continue
 		}
 
-		// Parse the value and set the field
-		if err := setFieldValue(field, valueStr); err != nil {
+		// Determine scaling factor based on sensor metadata (defaults to 1)
+		scaleFactor := GetScaleFactor(ToSnakeCase(key))
+
+		// Parse the value and set the field with scaling applied where necessary
+		if err := setFieldValue(field, valueStr, scaleFactor); err != nil {
 			// Log error but continue with other fields
 			continue
 		}
@@ -80,7 +83,7 @@ func parseValueString(valString string, sensorData *SensorData) error {
 }
 
 // setFieldValue sets a reflect.Value field with the parsed string value
-func setFieldValue(field reflect.Value, valueStr string) error {
+func setFieldValue(field reflect.Value, valueStr string, scaleFactor float64) error {
 	// Normalize the value string for European formats
 	normalizedValue := normalizeNumericValue(valueStr)
 
@@ -104,7 +107,7 @@ func setFieldValue(field reflect.Value, valueStr string) error {
 		if err != nil {
 			return fmt.Errorf("failed to parse float value '%s': %w", normalizedValue, err)
 		}
-		newVal.Elem().SetFloat(floatVal)
+		newVal.Elem().SetFloat(floatVal * scaleFactor)
 	case reflect.String:
 		newVal.Elem().SetString(normalizedValue)
 	default:
