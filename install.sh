@@ -50,6 +50,17 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Helper function: ensure ADB connection, then run the given command in the device shell
+adbs() {
+  # Establish connection if it is not already present
+  if ! adb devices | grep -q "$ADB_SERVER"; then
+    echo "Connecting to ADB $ADB_SERVER ..."
+    adb connect "$ADB_SERVER" >/dev/null 2>&1 || return 1
+  fi
+  # Execute the requested command in the device shell
+  adb -s "$ADB_SERVER" shell "$@"
+}
+
 # --- Script Start ---
 echo -e "${GREEN}🚗 BYD-HASS Bootstrapping Installer${NC}"
 
@@ -64,24 +75,27 @@ echo -e "\n${BLUE}2. Important Manual Steps Required:${NC}"
 echo -e "${YELLOW}   - You must install the Diplus, Termux:Boot and Termux:API apps from Github (see README.md),${NC}"
 echo -e "${YELLOW}   - and make sure you configured the apps according to the app instructions.${NC}"
 echo -e "${YELLOW}   - You must enable 'Wireless debugging' in Android Developer Options.${NC}"
-read -p "Press [Enter] to continue once you have completed these steps..." || true
+read -p "Press [Enter] to continue once you have completed these steps..."
 
 # 3a. Connect ADB to self
 echo -e "\n${BLUE}3a. Connecting ADB to localhost (make sure to Accept and remember the connection)...${NC}"
-adb connect "$ADB_SERVER" 
-echo "✅ ADB connected."
+if adbs true; then
+  echo "✅ ADB connected."
+else
+  echo -e "${RED}❌ Failed to connect to ADB.${NC}"
+  exit 1
+fi
 
 # 3b. Enable background start for Termux, Termux:Boot and Termux:API
-#echo -e "\n${BLUE}3b. Opening 'Deactive background start' app, uncheck Diplus, Termux, Termux:Boot and Termux:API and hit OK...${NC}"
-#adb -s "$ADB_SERVER" shell "am start -n com.byd.appstartmanagement/.frame.AppStartManagement" >/dev/null 2>&1 || true
-#read -p "Press [Enter] to continue once you have completed these steps..." || true
+echo -e "\n${BLUE}3b. Opening 'Deactive background start' app, uncheck Diplus, Termux, Termux:Boot and Termux:API and hit OK...${NC}"
+adb -s "$ADB_SERVER" shell "am start -n com.byd.appstartmanagement/.frame.AppStartManagement" >/dev/null 2>&1 || true
+read -p "Press [Enter] to continue once you have completed these steps..." || true
 
 # 4. Create Directories
 echo -e "\n${BLUE}4. Creating necessary directories...${NC}"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$BOOT_DIR"
-adb -s "$ADB_SERVER" shell "mkdir -p '$SHARED_DIR'" || true
-set -e
+adbs "mkdir -p $SHARED_DIR"
 echo "✅ Directories created."
 
 # 5. Download Latest Binary
@@ -100,40 +114,57 @@ echo "✅ Download complete."
 
 # 6. Stop Previous Instances
 echo -e "\n${BLUE}6. Stopping any previous instances...${NC}"
-adb -s "$ADB_SERVER" shell "pkill -f $ADB_KEEPALIVE_SCRIPT_NAME" || true
-pkill -f "$BOOT_SCRIPT_NAME" || true
-pkill -f "$BINARY_PATH" || true
+adbs "pkill -f $ADB_KEEPALIVE_SCRIPT_NAME" 2>/dev/null || true
+pkill -f "$BOOT_SCRIPT_NAME" 2>/dev/null || true
+pkill -f "$BINARY_PATH" 2>/dev/null || true
 echo "✅ Old processes terminated."
 
 # Move new binary into place
 mv "$TEMP_BINARY_PATH" "$BINARY_PATH"
 
-# 7. Get User Configuration
-echo -e "\n${BLUE}7. Please provide your configuration:${NC}"
-read -p "   - MQTT WebSocket URL (e.g., ws://user:pass@host:port): " MQTT_URL || true
-read -p "   - ABRP API Key (optional): " ABRP_API_KEY || true
-if [ -n "$ABRP_API_KEY" ]; then
-  read -p "   - ABRP Vehicle Key: " ABRP_VEHICLE_KEY || true
+# 7. Configuration
+CONFIG_CHANGED=false
+if [ -f "$CONFIG_PATH" ]; then
+  echo -e "\n${BLUE}7. Existing configuration detected at $CONFIG_PATH.${NC}"
+  read -p "   - Do you want to update the configuration? (y/N): " UPDATE_CONF || true
+  if [ "${UPDATE_CONF,,}" == "y" ]; then
+    CONFIG_CHANGED=true
+  else
+    echo "✅ Keeping existing configuration."
+  fi
 else
-  ABRP_VEHICLE_KEY=""
+  CONFIG_CHANGED=true
 fi
-read -p "   - Enable verbose logging? (y/N): " VERBOSE_INPUT || true
-VERBOSE=$([ "${VERBOSE_INPUT,,}" == "y" ] && echo "true" || echo "false")
 
-# 8. Create Environment File
-echo -e "\n${BLUE}8. Creating environment configuration file...${NC}"
-cat > "$CONFIG_PATH" << EOF
+if [ "$CONFIG_CHANGED" = true ]; then
+  echo -e "\n${BLUE}7. Please provide your configuration:${NC}"
+  read -p "   - MQTT WebSocket URL (e.g., ws://user:pass@host:port): " MQTT_URL || true
+  read -p "   - ABRP API Key (optional): " ABRP_API_KEY || true
+  if [ -n "$ABRP_API_KEY" ]; then
+    read -p "   - ABRP Vehicle Key: " ABRP_VEHICLE_KEY || true
+  else
+    ABRP_VEHICLE_KEY=""
+  fi
+  read -p "   - Enable verbose logging? (y/N): " VERBOSE_INPUT || true
+  VERBOSE=$([ "${VERBOSE_INPUT,,}" == "y" ] && echo "true" || echo "false")
+
+  # 8. Create or update Environment File
+  echo -e "\n${BLUE}8. Saving environment configuration...${NC}"
+  cat > "$CONFIG_PATH" << EOF
 # Configuration for byd-hass service
 export BYD_HASS_MQTT_URL='$MQTT_URL'
 export BYD_HASS_ABRP_API_KEY='$ABRP_API_KEY'
 export BYD_HASS_ABRP_VEHICLE_KEY='$ABRP_VEHICLE_KEY'
 export BYD_HASS_VERBOSE='$VERBOSE'
 EOF
-echo "✅ Config file created at $CONFIG_PATH"
+  echo "✅ Config file saved at $CONFIG_PATH"
+else
+  echo "Using existing configuration file."
+fi
 
 # 9. Create External Guardian Script
 echo -e "\n${BLUE}9. Creating external keep-alive script...${NC}"
-adb -s "$ADB_SERVER" shell "cat > $ADB_KEEPALIVE_SCRIPT_PATH" << KEEP_ALIVE_EOF
+adbs "cat > $ADB_KEEPALIVE_SCRIPT_PATH" << KEEP_ALIVE_EOF
 #!/system/bin/sh
 echo "[\$(date)] External keep-alive service started." >> "$ADB_LOG_FILE"
 while true; do
@@ -146,13 +177,21 @@ while true; do
     sleep 10
 done
 KEEP_ALIVE_EOF
-adb shell "chmod +x '$ADB_KEEPALIVE_SCRIPT_PATH'"
+adbs "chmod +x $ADB_KEEPALIVE_SCRIPT_PATH"
 echo "✅ External keep-alive script created."
 
 # 10. Create Termux:Boot Orchestrator Script
 echo -e "\n${BLUE}10. Creating Termux:Boot orchestrator script...${NC}"
 cat > "$BOOT_SCRIPT_PATH" << BOOT_EOF
 #!/data/data/com.termux/files/usr/bin/sh
+
+# Helper to ensure ADB is connected before executing commands
+adbs() {
+  if ! adb devices | grep -q "$ADB_SERVER"; then
+      adb connect "$ADB_SERVER"
+  fi
+  adb -s "$ADB_SERVER" shell "$@"
+}
 
 # This script is the main orchestrator, started by Termux:Boot.
 # It ensures the external guardian is running, then starts the main app.
@@ -165,17 +204,15 @@ echo "---"
 echo "[\$(date)] Orchestrator started."
 
 # 1. Ensure the external ADB-based guardian is running.
-if ! adb devices | grep -q "$ADB_SERVER"; then
-    adb connect "$ADB_SERVER"
-fi
+adbs true
 
-PROCESS_COUNT=$(adb -s "$ADB_SERVER" shell "pgrep -f $ADB_KEEPALIVE_SCRIPT_NAME" | wc -l)
+PROCESS_COUNT=$(adbs "pgrep -f $ADB_KEEPALIVE_SCRIPT_NAME" | wc -l)
 if [ $PROCESS_COUNT -gt 1 ]; then
     echo "[\$(date)] External guardian is already running."
 
 else
     echo "[\$(date)] External guardian not found. Starting it..."
-    adb -s "$ADB_SERVER" shell "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
+    adbs "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
 fi
 
 # 2. Run the main byd-hass application in its own keep-alive loop.

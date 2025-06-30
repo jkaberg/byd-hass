@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/jkaberg/byd-hass/internal/mqtt"
 	"github.com/jkaberg/byd-hass/internal/sensors"
@@ -188,6 +189,11 @@ func (t *MQTTTransmitter) publishDiscoveryConfigs(data *sensors.SensorData) erro
 		}
 	}
 
+	// Publish Last Transmission discovery
+	if err := t.publishLastTransmissionDiscovery(baseTopic, device); err != nil {
+		t.logger.WithError(err).Error("Failed to publish Last Transmission discovery")
+	}
+
 	return nil
 }
 
@@ -307,6 +313,11 @@ func (t *MQTTTransmitter) Transmit(data *sensors.SensorData) error {
 		return fmt.Errorf("failed to publish availability: %w", err)
 	}
 
+	// Publish last transmission timestamp
+	if err := t.publishLastTransmission(); err != nil {
+		return fmt.Errorf("failed to publish last transmission: %w", err)
+	}
+
 	t.logger.Debug("Data transmitted successfully")
 	return nil
 }
@@ -380,6 +391,50 @@ func (t *MQTTTransmitter) publishAvailability(online bool) error {
 	topic := fmt.Sprintf("byd_car/%s/availability", t.deviceID)
 	if err := t.client.Publish(topic, []byte(payload), true); err != nil {
 		return fmt.Errorf("failed to publish availability to %s: %w", topic, err)
+	}
+	return nil
+}
+
+// publishLastTransmissionDiscovery publishes discovery config for the "Last Transmission" timestamp sensor
+func (t *MQTTTransmitter) publishLastTransmissionDiscovery(baseTopic string, device HADevice) error {
+	uniqueID := fmt.Sprintf("%s_last_transmission", t.deviceID)
+
+	// Skip if already published
+	if t.publishedSensors[uniqueID] {
+		return nil
+	}
+
+	config := HADiscoveryConfig{
+		Name:              "Last Transmission",
+		UniqueID:          uniqueID,
+		StateTopic:        fmt.Sprintf("%s/last_transmission", baseTopic),
+		AvailabilityTopic: fmt.Sprintf("%s/availability", baseTopic),
+		DeviceClass:       "timestamp",
+		Device:            device,
+	}
+
+	topic := fmt.Sprintf("%s/sensor/byd_car_%s/last_transmission/config", t.discoveryPrefix, t.deviceID)
+
+	if err := t.publishConfigRaw(topic, config); err != nil {
+		return fmt.Errorf("failed to publish Last Transmission discovery config: %w", err)
+	}
+
+	t.logger.WithFields(logrus.Fields{
+		"sensor_name": "Last Transmission",
+		"entity_id":   "last_transmission",
+		"topic":       topic,
+	}).Info("Published Last Transmission discovery config")
+
+	t.publishedSensors[uniqueID] = true
+	return nil
+}
+
+// publishLastTransmission publishes the current timestamp indicating the last successful transmission
+func (t *MQTTTransmitter) publishLastTransmission() error {
+	topic := fmt.Sprintf("byd_car/%s/last_transmission", t.deviceID)
+	timestamp := time.Now().Format(time.RFC3339)
+	if err := t.client.Publish(topic, []byte(timestamp), true); err != nil {
+		return fmt.Errorf("failed to publish last transmission timestamp to %s: %w", topic, err)
 	}
 	return nil
 }
