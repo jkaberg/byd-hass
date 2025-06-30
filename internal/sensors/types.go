@@ -221,7 +221,7 @@ var AllSensors = []SensorDefinition{
 	{49, "RadarLeft", "雨刮档位", "Radar Left", "sensor", "distance", "m", 1},
 	{50, "RadarFrontMidLeft", "巡航开关", "Radar Front Mid Left", "sensor", "distance", "m", 1},
 	{51, "RadarFrontMidRight", "前车距离", "Radar Front Mid Right", "sensor", "distance", "m", 1},
-	{52, "ChargingStatus", "充电状态", "Charging Status", "sensor", "power", "", 1},
+	{52, "ChargingStatus", "充电状态", "Charging Status", "sensor", "", "", 1},
 	{53, "LeftFrontTirePressure", "左前轮气压", "Left Front Tire Pressure", "sensor", "pressure", "bar", 0.01},
 	{54, "RightFrontTirePressure", "右前轮气压", "Right Front Tire Pressure", "sensor", "pressure", "bar", 0.01},
 	{55, "LeftRearTirePressure", "左后轮气压", "Left Rear Tire Pressure", "sensor", "pressure", "bar", 0.01},

@@ -78,8 +78,8 @@ func NewMQTTTransmitter(client *mqtt.Client, deviceID, discoveryPrefix string, l
 // list lean and fully data-driven for now.
 func (t *MQTTTransmitter) getSensorConfigs() []SensorConfig {
 	// Build a lookup table for quick ID → definition mapping
-	idSet := make(map[int]struct{}, len(MQTTSensorIDs))
-	for _, id := range MQTTSensorIDs {
+	idSet := make(map[int]struct{}, len(TransmittedSensorIDs()))
+	for _, id := range TransmittedSensorIDs() {
 		idSet[id] = struct{}{}
 	}
 
@@ -194,6 +194,11 @@ func (t *MQTTTransmitter) publishDiscoveryConfigs(data *sensors.SensorData) erro
 		t.logger.WithError(err).Error("Failed to publish Last Transmission discovery")
 	}
 
+	// Publish derived Charging Status discovery (virtual sensor)
+	if err := t.publishDerivedChargingStatusDiscovery(baseTopic, device); err != nil {
+		t.logger.WithError(err).Error("Failed to publish Charging Status discovery")
+	}
+
 	return nil
 }
 
@@ -211,20 +216,12 @@ func (t *MQTTTransmitter) publishConfigRaw(topic string, config interface{}) err
 	return nil
 }
 
-// applyScaling applies a scaling factor to a sensor value if it's not nil
-func applyScaling(value *float64, scaleFactor float64) interface{} {
-	if value != nil {
-		return *value * scaleFactor
-	}
-	return nil
-}
-
 // buildStatePayload builds the JSON payload for the state topic
 func (t *MQTTTransmitter) buildStatePayload(data *sensors.SensorData) ([]byte, error) {
 	state := make(map[string]interface{})
 	// Pre-compute allowed entityIDs in snake_case for quick filtering
-	allowed := make(map[string]struct{}, len(MQTTSensorIDs))
-	for _, id := range MQTTSensorIDs {
+	allowed := make(map[string]struct{}, len(TransmittedSensorIDs()))
+	for _, id := range TransmittedSensorIDs() {
 		if def := sensors.GetSensorByID(id); def != nil {
 			allowed[sensors.ToSnakeCase(def.FieldName)] = struct{}{}
 		}
@@ -261,10 +258,13 @@ func (t *MQTTTransmitter) buildStatePayload(data *sensors.SensorData) ([]byte, e
 		}
 		state[jsonKey] = value
 	}
+	// Inject derived/virtual sensors -------------------------------------
+	state["charging_status"] = sensors.DeriveChargingStatus(data)
+
 	// Add a 'state' field for the device_tracker
 	if data.Speed != nil && *data.Speed > 0 {
 		state["state"] = "moving"
-	} else if data.ChargingStatus != nil && *data.ChargingStatus > 0 {
+	} else if sensors.DeriveChargingStatus(data) == "charging" {
 		state["state"] = "charging"
 	} else if data.PowerStatus != nil && *data.PowerStatus > 0 {
 		state["state"] = "online"
@@ -436,6 +436,41 @@ func (t *MQTTTransmitter) publishLastTransmission() error {
 	if err := t.client.Publish(topic, []byte(timestamp), true); err != nil {
 		return fmt.Errorf("failed to publish last transmission timestamp to %s: %w", topic, err)
 	}
+	return nil
+}
+
+// publishDerivedChargingStatusDiscovery publishes discovery config for the virtual Charging Status sensor.
+func (t *MQTTTransmitter) publishDerivedChargingStatusDiscovery(baseTopic string, device HADevice) error {
+	uniqueID := fmt.Sprintf("%s_charging_status", t.deviceID)
+
+	if t.publishedSensors[uniqueID] {
+		return nil
+	}
+
+	config := HADiscoveryConfig{
+		Name:              "Charging Status",
+		UniqueID:          uniqueID,
+		StateTopic:        fmt.Sprintf("%s/state", baseTopic),
+		ValueTemplate:     "{{ value_json.charging_status }}",
+		AvailabilityTopic: fmt.Sprintf("%s/availability", baseTopic),
+		Device:            device,
+		Icon:              "mdi:ev-station", // generic charging icon
+	}
+
+	topic := fmt.Sprintf("%s/sensor/byd_car_%s/charging_status/config", t.discoveryPrefix, t.deviceID)
+
+	if err := t.publishConfigRaw(topic, config); err != nil {
+		return err
+	}
+
+	t.logger.WithFields(logrus.Fields{
+		"sensor_name": "Charging Status",
+		"entity_id":   "charging_status",
+		"topic":       topic,
+	}).Info("Published Charging Status discovery config")
+
+	// Mark as published
+	t.publishedSensors[uniqueID] = true
 	return nil
 }
 

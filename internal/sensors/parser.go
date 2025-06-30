@@ -152,7 +152,7 @@ func GetSensorIDs() []int {
 	return []int{
 		33, // BatteryPercentage
 		2,  // Speed
-		52, // ChargingStatus
+		95, // ChargeGunState (needed for derived Charging Status)
 		10, // EnginePower
 		26, // OutsideTemperature
 		3,  // Mileage
