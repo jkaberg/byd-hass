@@ -147,6 +147,14 @@ if [ "$CONFIG_CHANGED" = true ]; then
   fi
   read -p "   - Enable verbose logging? (y/N): " VERBOSE_INPUT || true
   VERBOSE=$([ "${VERBOSE_INPUT,,}" == "y" ] && echo "true" || echo "false")
+  # Ask whether the ABRP Android app must be running (only relevant if an API key was provided)
+  if [ -n "$ABRP_API_KEY" ]; then
+    read -p "   - Require the ABRP Android app to be running? (Y/n): " REQUIRE_ABRP_INPUT || true
+    REQUIRE_ABRP_APP=$([ "${REQUIRE_ABRP_INPUT,,}" == "n" ] && echo "false" || echo "true")
+  else
+    # No ABRP telemetry configured, disable requirement explicitly
+    REQUIRE_ABRP_APP="false"
+  fi
 
   # 8. Create or update Environment File
   echo -e "\n${BLUE}8. Saving environment configuration...${NC}"
@@ -156,6 +164,7 @@ export BYD_HASS_MQTT_URL='$MQTT_URL'
 export BYD_HASS_ABRP_API_KEY='$ABRP_API_KEY'
 export BYD_HASS_ABRP_TOKEN='$ABRP_TOKEN'
 export BYD_HASS_VERBOSE='$VERBOSE'
+export BYD_HASS_REQUIRE_ABRP_APP='$REQUIRE_ABRP_APP'
 EOF
   echo "✅ Config file saved at $CONFIG_PATH"
 else

@@ -8,7 +8,7 @@ BYD-HASS is a small Go program that turns data from the BYD "Diplus" API into MQ
 2. Values are cached in memory.  Nothing is sent unless a value has changed since the last time it was transmitted.
 3. Changed values are published:
    • to MQTT every 60 seconds so that Home Assistant can create sensors automatically (MQTT Discovery).
-   • to ABRP every 10 seconds if API and vehicle keys are supplied.
+   • to ABRP every 10 seconds if an API key **and user token** are supplied **and** the ABRP Android app is running (can be disabled with `-require-abrp-app=false`).
 
 ## Quick start (Termux)
 
@@ -21,8 +21,9 @@ The installer downloads the binary, asks for basic settings, and configures Term
 Requirements:
 - [Diplus app](http://lanye.pw/di/) running and reachable on `localhost:8988`
 - [Termux](https://termux.com/) plus the [Termux:Boot](https://github.com/termux/termux-boot) add-on so the program can start automatically
+- [ABRP Android app](https://play.google.com/store/apps/details?id=com.iternio.abrpapp) running in the background (only required if you enable ABRP telemetry or leave `-require-abrp-app` at its default `true`)
 - [Termux:API](https://github.com/termux/termux-api) (for location)
-- An MQTT broker – normally the one already used by Home Assistant
+- An MQTT broker – normally the one already used by Home Assistant (tip: if you're gonna use this while traveling, consider [MQTT over Websocket](https://cedalo.com/blog/enabling-websockets-over-mqtt-with-mosquitto/))
 
 ---
 
@@ -38,7 +39,8 @@ Settings can be supplied as command-line flags or environment variables (prefix 
 | ---- | -------------------- | ------- |
 | `-mqtt-url`            | `BYD_HASS_MQTT_URL`          | MQTT connection string (e.g. `ws://user:pass@broker:9001/mqtt`) |
 | `-abrp-api-key`        | `BYD_HASS_ABRP_API_KEY`      | ABRP API key (optional) |
-| `-abrp-vehicle-key`    | `BYD_HASS_ABRP_VEHICLE_KEY`  | Vehicle identifier used by ABRP (optional) |
+| `-abrp-token`          | `BYD_HASS_ABRP_TOKEN`        | ABRP user token (optional) |
+| `-require-abrp-app`    | `BYD_HASS_REQUIRE_ABRP_APP`  | Require ABRP Android app to be running before sending telemetry (default `true`) |
 | `-device-id`           | `BYD_HASS_DEVICE_ID`         | Unique name for this car (default is auto-generated) |
 | `-verbose`             | `BYD_HASS_VERBOSE`           | Enable extra logging |
 | `-discovery-prefix`    | ―                            | MQTT discovery prefix (default `homeassistant`) |
