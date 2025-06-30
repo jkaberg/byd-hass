@@ -183,16 +183,16 @@ func main() {
 	// Initial poll to populate data
 	initialDataPollAndTransmit(ctx, diplusClient, locationProvider, cacheManager, sharedState, mqttTransmitter, abrpTransmitter, logger)
 
-	logger.Info("BYD-HASS started successfully")
+	logger.Debug("BYD-HASS started successfully")
 
 	// Main loop with multiple tickers
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("Application context cancelled")
+			logger.Debug("Application context cancelled")
 			return
 		case <-sigChan:
-			logger.Info("Received termination signal, shutting down...")
+			logger.Debug("Received termination signal, shutting down...")
 			cancel()
 			return
 		case <-diplusTicker.C:
@@ -232,11 +232,11 @@ func main() {
 			} else {
 				// MQTT transmission (non-blocking)
 				go func(data *sensors.SensorData) {
-					logger.Info("Transmitting sensor data to MQTT...")
+					logger.Debug("Transmitting sensor data to MQTT...")
 					if err := transmitToMQTTAsync(ctx, mqttTransmitter, data, logger); err != nil {
 						logger.WithError(err).Error("MQTT transmission failed")
 					} else {
-						logger.Info("MQTT transmission successful")
+						logger.Debug("MQTT transmission successful")
 						sharedState.ClearMQTTFlag() // Clear flag on success
 					}
 				}(latestData)
@@ -347,7 +347,7 @@ func pollAndFlagChangesAsync(
 	}
 	// The UpdateData call in pollSensorDataAsync already handles flagging changes
 	if sharedState.GetLatestData() != nil {
-		logger.Info("Sensor data updated, flagged for transmission")
+		logger.Debug("Sensor data updated, flagged for transmission")
 	} else {
 		logger.Debug("No sensor data changes detected")
 	}
@@ -364,7 +364,7 @@ func pollSensorDataAsync(
 	ctx, cancel := context.WithTimeout(ctx, config.DiplusTimeout)
 	defer cancel()
 
-	logger.Info("Polling Diplus for new sensor data...")
+	logger.Debug("Polling Diplus for new sensor data...")
 
 	// Poll sensor data using the standard poll method
 	sensorData, err := diplusClient.Poll()
@@ -390,17 +390,17 @@ func pollSensorDataAsync(
 				"lon":       locationData.Longitude,
 				"accuracy":  locationData.Accuracy,
 				"timestamp": locationData.Timestamp,
-			}).Info("Enriched with location data")
+			}).Debug("Enriched with location data")
 		} else {
 			logger.WithError(err).Debug("Could not get location data")
 		}
 	}
 
 	if cacheManager.Changed(sensorData) {
-		logger.Info("Sensor data has changed, updating state")
+		logger.Debug("Sensor data has changed, updating state")
 		sharedState.UpdateData(sensorData)
 	} else {
-		logger.Info("Sensor data has not changed, no update needed")
+		logger.Debug("Sensor data has not changed, no update needed")
 	}
 
 	return nil
@@ -485,7 +485,7 @@ func initialDataPollAndTransmit(
 	abrpTransmitter *transmission.ABRPTransmitter,
 	logger *logrus.Logger,
 ) {
-	logger.Info("Performing initial data poll...")
+	logger.Debug("Performing initial data poll...")
 
 	// Poll sensor data using the standard poll method
 	sensorData, err := diplusClient.Poll()
@@ -506,14 +506,14 @@ func initialDataPollAndTransmit(
 	_ = cacheManager.Changed(sensorData)
 
 	if mqttTransmitter != nil {
-		logger.Info("Performing initial MQTT transmission...")
+		logger.Debug("Performing initial MQTT transmission...")
 		if err := transmitToMQTTAsync(ctx, mqttTransmitter, sensorData, logger); err != nil {
 			logger.WithError(err).Error("Initial MQTT transmission failed")
 		}
 	}
 
 	if abrpTransmitter != nil {
-		logger.Info("Performing initial ABRP transmission...")
+		logger.Debug("Performing initial ABRP transmission...")
 		if err := transmitToABRPAsync(ctx, abrpTransmitter, sensorData, logger); err != nil {
 			logger.WithError(err).Error("Initial ABRP transmission failed")
 		}

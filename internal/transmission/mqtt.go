@@ -146,7 +146,7 @@ func (t *MQTTTransmitter) publishDiscoveryForSensor(sensor SensorConfig, device 
 		"sensor_name": sensor.Name,
 		"entity_id":   sensor.EntityID,
 		"topic":       topic,
-	}).Info("Published sensor discovery config")
+	}).Debug("Published sensor discovery config")
 
 	// Mark as published
 	t.publishedSensors[uniqueID] = true
@@ -169,7 +169,7 @@ func (t *MQTTTransmitter) publishDiscoveryConfigs(data *sensors.SensorData) erro
 		if err := t.publishDeviceTrackerDiscovery(baseTopic, device); err != nil {
 			t.logger.WithError(err).Warn("Failed to publish device_tracker discovery")
 		} else {
-			t.logger.Info("Device tracker discovery config published")
+			t.logger.Debug("Device tracker discovery config published")
 			t.publishedSensors["device_tracker"] = true
 		}
 	}
@@ -275,14 +275,6 @@ func (t *MQTTTransmitter) buildStatePayload(data *sensors.SensorData) ([]byte, e
 	return json.Marshal(state)
 }
 
-// Btoi converts a boolean to an integer (0 or 1)
-func Btoi(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
 // Transmit sends sensor data to MQTT
 func (t *MQTTTransmitter) Transmit(data *sensors.SensorData) error {
 	if !t.client.IsConnected() {
@@ -337,7 +329,7 @@ func (t *MQTTTransmitter) publishSensorData(data *sensors.SensorData) error {
 	t.logger.WithFields(logrus.Fields{
 		"topic":   topic,
 		"payload": string(payload),
-	}).Info("Published sensor data")
+	}).Debug("Published sensor data")
 
 	return nil
 }
@@ -423,7 +415,7 @@ func (t *MQTTTransmitter) publishLastTransmissionDiscovery(baseTopic string, dev
 		"sensor_name": "Last Transmission",
 		"entity_id":   "last_transmission",
 		"topic":       topic,
-	}).Info("Published Last Transmission discovery config")
+	}).Debug("Published Last Transmission discovery config")
 
 	t.publishedSensors[uniqueID] = true
 	return nil
@@ -467,7 +459,7 @@ func (t *MQTTTransmitter) publishDerivedChargingStatusDiscovery(baseTopic string
 		"sensor_name": "Charging Status",
 		"entity_id":   "charging_status",
 		"topic":       topic,
-	}).Info("Published Charging Status discovery config")
+	}).Debug("Published Charging Status discovery config")
 
 	// Mark as published
 	t.publishedSensors[uniqueID] = true

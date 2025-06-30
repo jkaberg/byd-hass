@@ -80,7 +80,7 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 	})
 
 	opts.SetReconnectingHandler(func(client mqtt.Client, opts *mqtt.ClientOptions) {
-		logger.Info("MQTT reconnecting...")
+		logger.Debug("MQTT reconnecting...")
 	})
 
 	opts.SetOnConnectHandler(func(client mqtt.Client) {
@@ -147,7 +147,7 @@ func (c *Client) IsConnected() bool {
 // Disconnect disconnects the client
 func (c *Client) Disconnect(quiesce uint) {
 	c.client.Disconnect(quiesce)
-	c.logger.Info("MQTT client disconnected")
+	c.logger.Debug("MQTT client disconnected")
 }
 
 // GetDeviceID returns the device ID
