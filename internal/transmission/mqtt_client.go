@@ -1,4 +1,4 @@
-package mqtt
+package transmission
 
 import (
 	"crypto/tls"
@@ -11,14 +11,25 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Client wraps the MQTT client with additional functionality
+// Client wraps the MQTT client with additional functionality.
+//
+// NOTE: This file was moved from internal/mqtt to reduce the overall
+// package count and simplify the project structure. The original
+// functionality remains unchanged.
+//
+// All references that previously relied on github.com/jkaberg/byd-hass/internal/mqtt
+// have been updated to use the transmission package instead.
+//
+// The public API (type names and function signatures) is intentionally kept
+// identical, so no external behaviour changes are introduced.
+
 type Client struct {
 	client   mqtt.Client
 	deviceID string
 	logger   *logrus.Logger
 }
 
-// NewClient creates a new MQTT client with support for both WebSocket and standard MQTT protocols
+// NewClient creates a new MQTT client with support for both WebSocket and standard MQTT protocols.
 func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error) {
 	// Parse the MQTT URL
 	parsedURL, err := url.Parse(mqttURL)
@@ -108,7 +119,7 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 	}, nil
 }
 
-// Publish publishes a message to the specified topic
+// Publish publishes a message to the specified topic.
 func (c *Client) Publish(topic string, payload []byte, retained bool) error {
 	qos := byte(1) // At least once delivery
 	token := c.client.Publish(topic, qos, retained, payload)
@@ -126,7 +137,7 @@ func (c *Client) Publish(topic string, payload []byte, retained bool) error {
 	return nil
 }
 
-// Subscribe subscribes to a topic with a message handler
+// Subscribe subscribes to a topic with a message handler.
 func (c *Client) Subscribe(topic string, handler mqtt.MessageHandler) error {
 	qos := byte(1)
 	token := c.client.Subscribe(topic, qos, handler)
@@ -139,23 +150,23 @@ func (c *Client) Subscribe(topic string, handler mqtt.MessageHandler) error {
 	return nil
 }
 
-// IsConnected returns true if the client is connected
+// IsConnected returns true if the client is connected.
 func (c *Client) IsConnected() bool {
 	return c.client.IsConnected()
 }
 
-// Disconnect disconnects the client
+// Disconnect disconnects the client.
 func (c *Client) Disconnect(quiesce uint) {
 	c.client.Disconnect(quiesce)
 	c.logger.Debug("MQTT client disconnected")
 }
 
-// GetDeviceID returns the device ID
+// GetDeviceID returns the device ID.
 func (c *Client) GetDeviceID() string {
 	return c.deviceID
 }
 
-// cleanURL removes credentials from URL for logging
+// cleanURL removes credentials from URL for logging.
 func cleanURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -169,27 +180,27 @@ func cleanURL(rawURL string) string {
 	return parsed.String()
 }
 
-// GetBaseTopic returns the base topic for this device
+// GetBaseTopic returns the base topic for this device.
 func (c *Client) GetBaseTopic() string {
 	return fmt.Sprintf("byd_car/%s", c.deviceID)
 }
 
-// GetDiscoveryTopic returns the Home Assistant discovery topic
+// GetDiscoveryTopic returns the Home Assistant discovery topic.
 func (c *Client) GetDiscoveryTopic(prefix, entityType, entityID string) string {
 	return fmt.Sprintf("%s/%s/byd_car_%s/%s/config", prefix, entityType, c.deviceID, entityID)
 }
 
-// GetStateTopic returns the state topic for this device
+// GetStateTopic returns the state topic for this device.
 func (c *Client) GetStateTopic() string {
 	return fmt.Sprintf("%s/state", c.GetBaseTopic())
 }
 
-// GetAvailabilityTopic returns the availability topic for this device
+// GetAvailabilityTopic returns the availability topic for this device.
 func (c *Client) GetAvailabilityTopic() string {
 	return fmt.Sprintf("%s/availability", c.GetBaseTopic())
 }
 
-// PublishAvailability publishes device availability status
+// PublishAvailability publishes device availability status.
 func (c *Client) PublishAvailability(online bool) error {
 	status := "offline"
 	if online {
@@ -199,7 +210,7 @@ func (c *Client) PublishAvailability(online bool) error {
 	return c.Publish(c.GetAvailabilityTopic(), []byte(status), true)
 }
 
-// BuildCleanTopic ensures topic follows MQTT standards
+// BuildCleanTopic ensures topic follows MQTT standards.
 func BuildCleanTopic(parts ...string) string {
 	var cleanParts []string
 	for _, part := range parts {

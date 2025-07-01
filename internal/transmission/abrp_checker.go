@@ -1,4 +1,4 @@
-package abrpapp
+package transmission
 
 import (
 	"bytes"
@@ -12,11 +12,14 @@ import (
 
 // Checker verifies that the ABRP Android application is running on the device.
 //
-// The detection strategy relies on an ADB-over-TCP connection to localhost:5555.
-// For every invocation of IsRunning() (subject to a small cache TTL) it makes
-// sure the connection is established and then executes:
+// The detection strategy relies on an ADB-over-TCP connection to localhost:5555
+// and mirrors the behaviour of the original abrpapp package, but is now housed
+// within the transmission package to reduce the overall package count.
 //
-//	adb -s localhost:5555 shell "pidof com.iternio.abrpapp"
+// For every invocation of IsRunning() (subject to a small cache TTL) it makes sure
+// the connection is established and then executes:
+//
+//     adb -s localhost:5555 shell "pidof com.iternio.abrpapp"
 //
 // If the command succeeds (exit code 0) the application is considered running.
 // Any non-zero exit code or unexpected error means the app is not running.
@@ -25,6 +28,7 @@ import (
 // to avoid log noise, per project requirements.
 //
 // The cached result is kept for cacheTTL to minimise ADB round-trips.
+
 type Checker struct {
 	device   string
 	cacheTTL time.Duration

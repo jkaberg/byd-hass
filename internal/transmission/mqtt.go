@@ -7,14 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jkaberg/byd-hass/internal/mqtt"
 	"github.com/jkaberg/byd-hass/internal/sensors"
 	"github.com/sirupsen/logrus"
 )
 
 // MQTTTransmitter transmits sensor data via MQTT
 type MQTTTransmitter struct {
-	client           *mqtt.Client
+	client           *Client
 	deviceID         string
 	discoveryPrefix  string
 	logger           *logrus.Logger
@@ -59,7 +58,7 @@ type SensorConfig struct {
 }
 
 // NewMQTTTransmitter creates a new MQTT transmitter
-func NewMQTTTransmitter(client *mqtt.Client, deviceID, discoveryPrefix string, logger *logrus.Logger) *MQTTTransmitter {
+func NewMQTTTransmitter(client *Client, deviceID, discoveryPrefix string, logger *logrus.Logger) *MQTTTransmitter {
 	return &MQTTTransmitter{
 		client:           client,
 		deviceID:         deviceID,
