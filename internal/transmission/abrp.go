@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/jkaberg/byd-hass/internal/sensors"
 	"github.com/sirupsen/logrus"
 )
@@ -45,6 +47,7 @@ type ABRPTransmitter struct {
 	token      string
 	httpClient *http.Client
 	logger     *logrus.Logger
+	healthy    uint32 // 1 = last transmission successful, 0 = failed/unknown
 }
 
 // ABRPTelemetry represents the telemetry data format for ABRP
@@ -136,14 +139,19 @@ func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
 	// Send request
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
+		atomic.StoreUint32(&t.healthy, 0)
 		return fmt.Errorf("failed to send ABRP request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
+		err := fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
+		atomic.StoreUint32(&t.healthy, 0)
+		return err
 	}
+
+	atomic.StoreUint32(&t.healthy, 1)
 
 	// Log the entire telemetry object for full visibility
 	logPayload, err := json.Marshal(telemetry)
@@ -159,9 +167,9 @@ func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
 	return nil
 }
 
-// IsConnected always returns true for HTTP-based transmitter
+// IsConnected returns true when the last transmission attempt succeeded.
 func (t *ABRPTransmitter) IsConnected() bool {
-	return true
+	return atomic.LoadUint32(&t.healthy) == 1
 }
 
 // buildTelemetryData converts sensor data to ABRP telemetry format

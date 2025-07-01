@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/jkaberg/byd-hass/internal/config"
 	"github.com/jkaberg/byd-hass/internal/location"
 	"github.com/jkaberg/byd-hass/internal/mqtt"
+	"github.com/jkaberg/byd-hass/internal/notify"
 	"github.com/jkaberg/byd-hass/internal/sensors"
 	"github.com/jkaberg/byd-hass/internal/transmission"
 	"github.com/sirupsen/logrus"
@@ -91,6 +93,9 @@ func main() {
 
 	// Use a custom DNS resolver to bypass broken localhost resolvers on Termux/Android
 	setupCustomDNSResolver(logger)
+
+	// Setup Termux notifier (silent noop on non-Android environments)
+	notifier := notify.NewTermuxNotifier(logger)
 
 	logger.WithFields(logrus.Fields{
 		"version":              version,
@@ -171,6 +176,9 @@ func main() {
 		logger.Warn("No transmitters configured, data will only be cached")
 	}
 
+	// Start background goroutine that updates Termux notification when status changes
+	go monitorAndNotify(ctx, notifier, mqttTransmitter, abrpTransmitter, logger)
+
 	// Create tickers for different intervals
 	diplusTicker := time.NewTicker(config.DiplusPollInterval)
 	defer diplusTicker.Stop()
@@ -186,6 +194,9 @@ func main() {
 		mqttTicker = time.NewTicker(config.MQTTTransmitInterval)
 		defer mqttTicker.Stop()
 	}
+
+	// Track ABRP app availability to limit log noise
+	abrpAppAvailable := true // assume available at start; will be updated below
 
 	// Initial poll to populate data
 	initialDataPollAndTransmit(ctx, diplusClient, locationProvider, cacheManager, sharedState, mqttTransmitter, abrpTransmitter, logger)
@@ -215,11 +226,20 @@ func main() {
 			if abrpTransmitter != nil && latestData != nil && sharedState.HasUnsentABRPChanges() {
 				// If ABRP app must be running, verify via checker
 				if cfg.RequireABRPApp && abrpAppChecker != nil && !abrpAppChecker.IsRunning() {
-					logger.Debug("ABRP Android app not running, skipping telemetry")
+					if abrpAppAvailable {
+						logger.Debug("ABRP Android app not running, skipping telemetry")
+						abrpAppAvailable = false
+					}
 					break
 				}
 
 				// ABRP transmission (non-blocking)
+				if !abrpAppAvailable {
+					// Log once when the app becomes available again.
+					logger.Debug("ABRP Android app detected, resuming telemetry")
+					abrpAppAvailable = true
+				}
+
 				go func(data *sensors.SensorData) {
 					if err := transmitToABRPAsync(ctx, abrpTransmitter, data, logger); err != nil {
 						logger.WithError(err).Error("ABRP transmission failed")
@@ -359,16 +379,8 @@ func pollAndFlagChangesAsync(
 	timeoutCtx, cancel := context.WithTimeout(ctx, config.DiplusTimeout)
 	defer cancel()
 
-	logger.Debug("Starting sensor polling (async)...")
 	if err := pollSensorDataAsync(timeoutCtx, diplusClient, locationProvider, cacheManager, sharedState, logger); err != nil {
 		logger.WithError(err).Error("Sensor polling failed")
-		return
-	}
-	// The UpdateData call in pollSensorDataAsync already handles flagging changes
-	if sharedState.GetLatestData() != nil {
-		logger.Debug("Sensor data updated, flagged for transmission")
-	} else {
-		logger.Debug("No sensor data changes detected")
 	}
 }
 
@@ -383,7 +395,7 @@ func pollSensorDataAsync(
 	ctx, cancel := context.WithTimeout(ctx, config.DiplusTimeout)
 	defer cancel()
 
-	logger.Debug("Polling Diplus for new sensor data...")
+	// Polling Diplus: the DiplusClient will emit its own debug log; avoid duplicates here.
 
 	// Poll sensor data using the standard poll method
 	sensorData, err := diplusClient.Poll()
@@ -575,4 +587,57 @@ func setupCustomDNSResolver(logger *logrus.Logger) {
 			return conn, nil
 		},
 	}
+}
+
+// monitorAndNotify periodically checks transmitter connection status and updates the
+// persistent Termux notification. The notification is only updated when the status
+// string changes to avoid spamming the user.
+func monitorAndNotify(
+	ctx context.Context,
+	notifier *notify.TermuxNotifier,
+	mqttTx *transmission.MQTTTransmitter,
+	abrpTx *transmission.ABRPTransmitter,
+	logger *logrus.Logger,
+) {
+	var lastMsg string
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			msg := buildStatusMessage(mqttTx, abrpTx)
+			if msg != lastMsg {
+				notifier.Notify("BYD-HASS", msg)
+				lastMsg = msg
+				logger.Debug("Updated Termux notification: " + msg)
+			}
+		}
+	}
+}
+
+// buildStatusMessage constructs a short human-readable status string based on the
+// available transmitters.
+func buildStatusMessage(mqttTx *transmission.MQTTTransmitter, abrpTx *transmission.ABRPTransmitter) string {
+	parts := []string{"Running"}
+
+	if mqttTx != nil {
+		if mqttTx.IsConnected() {
+			parts = append(parts, "MQTT ✓")
+		} else {
+			parts = append(parts, "MQTT ✗")
+		}
+	}
+
+	if abrpTx != nil {
+		if abrpTx.IsConnected() {
+			parts = append(parts, "ABRP ✓")
+		} else {
+			parts = append(parts, "ABRP ✗")
+		}
+	}
+
+	return strings.Join(parts, ", ")
 }

@@ -199,13 +199,10 @@ echo -e "\n${BLUE}10. Creating Termux:Boot orchestrator script...${NC}"
 cat > "$BOOT_SCRIPT_PATH" << BOOT_EOF
 #!/data/data/com.termux/files/usr/bin/sh
 
-# Helper to ensure ADB is connected before executing commands
-adbs() {
-  if ! adb devices | grep -q "$ADB_SERVER"; then
-      adb connect "$ADB_SERVER"
-  fi
-  adb -s "$ADB_SERVER" shell "$@"
-}
+# Ensure ADB is connected before executing commands
+if ! adb devices | grep -q "$ADB_SERVER"; then
+    adb connect "$ADB_SERVER"
+fi
 
 # This script is the main orchestrator, started by Termux:Boot.
 # It ensures the external guardian is running, then starts the main app.
@@ -217,21 +214,17 @@ exec >> "$INTERNAL_LOG_FILE" 2>&1
 echo "---"
 echo "[\$(date)] Orchestrator started."
 
-# 1. Ensure the external ADB-based guardian is running.
-adbs true
-
-PROCESS_COUNT=$(adbs "pgrep -f $ADB_KEEPALIVE_SCRIPT_NAME" | wc -l)
-if [ $PROCESS_COUNT -gt 1 ]; then
-    echo "[\$(date)] External guardian is already running."
-
-else
-    echo "[\$(date)] External guardian not found. Starting it..."
-    adbs "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
-fi
-
-# 2. Run the main byd-hass application in its own keep-alive loop.
 . "$CONFIG_PATH"
 while true; do
+    PROCESS_COUNT=$(adb -s "$ADB_SERVER" shell "pgrep -f $ADB_KEEPALIVE_SCRIPT_NAME" | wc -l)
+    if [ $PROCESS_COUNT -gt 1 ]; then
+        echo "[\$(date)] External guardian is already running."
+
+    else
+        echo "[\$(date)] External guardian not found. Starting it..."
+        adbs "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
+    fi
+
     echo "[\$(date)] Starting byd-hass service..."
 
     $BINARY_PATH
@@ -242,6 +235,24 @@ done >> "$LOG_FILE"
 BOOT_EOF
 chmod +x "$BOOT_SCRIPT_PATH"
 echo "✅ Termux:Boot orchestrator script created."
+
+# 10b. Ensure .bashrc autostart entry
+BASHRC_PATH="$HOME/.bashrc"
+AUTOSTART_CMD="$BOOT_SCRIPT_PATH &"
+
+echo -e "\n${BLUE}10b. Ensuring .bashrc autostart entry...${NC}"
+# Create .bashrc if it does not exist
+if [ ! -f "$BASHRC_PATH" ]; then
+  touch "$BASHRC_PATH"
+  echo "Created $BASHRC_PATH"
+fi
+# Add autostart command if not already present
+if grep -Fxq "$AUTOSTART_CMD" "$BASHRC_PATH"; then
+  echo "✅ Autostart entry already present in .bashrc."
+else
+  echo "$AUTOSTART_CMD" >> "$BASHRC_PATH"
+  echo "✅ Added autostart entry to .bashrc."
+fi
 
 # 11. Start the main orchestrator script
 echo -e "\n${BLUE}11. Starting the main service orchestrator...${NC}"

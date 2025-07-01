@@ -37,7 +37,7 @@ func (c *DiplusClient) GetSensorData(sensorIDs []int) (*sensors.SensorData, erro
 		return nil, fmt.Errorf("no valid sensors found for IDs: %v", sensorIDs)
 	}
 
-	c.logger.WithField("template", template).Debug("Built API template")
+	//c.logger.WithField("template", template).Debug("Built API template")
 
 	// Make the HTTP request
 	responseBody, err := c.makeRequest(template)
@@ -83,12 +83,12 @@ func (c *DiplusClient) buildAPITemplate(sensorIDs []int) string {
 		part := fmt.Sprintf("%s:{%s}", key, sensor.ChineseName)
 		parts = append(parts, part)
 
-		c.logger.WithFields(logrus.Fields{
-			"sensor_id":    id,
-			"chinese_name": sensor.ChineseName,
-			"field_name":   sensor.FieldName,
-			"key":          key,
-		}).Debug("Added sensor to template")
+		//c.logger.WithFields(logrus.Fields{
+		//	"sensor_id":    id,
+		//	"chinese_name": sensor.ChineseName,
+		//	"field_name":   sensor.FieldName,
+		//	"key":          key,
+		//}).Debug("Added sensor to template")
 	}
 
 	if len(parts) == 0 {
@@ -111,7 +111,7 @@ func (c *DiplusClient) makeRequest(template string) ([]byte, error) {
 	// Build the full URL
 	fullURL := fmt.Sprintf("%s?text=%s", c.baseURL, encodedTemplate)
 
-	c.logger.WithField("url", fullURL).Debug("Making API request")
+	//c.logger.WithField("url", fullURL).Debug("Making API request")
 
 	// Make the request
 	resp, err := c.httpClient.Get(fullURL)
