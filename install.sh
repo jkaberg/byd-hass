@@ -22,6 +22,7 @@ fi
 BINARY_NAME="byd-hass"
 SHARED_DIR="/storage/emulated/0/bydhass"
 BINARY_PATH="$SHARED_DIR/$BINARY_NAME"
+EXEC_PATH="/data/local/tmp/$BINARY_NAME"  # Execution location inside Android shell (exec allowed)
 CONFIG_PATH="$SHARED_DIR/config.env"
 LOG_FILE="$SHARED_DIR/byd-hass.log"
 
@@ -132,6 +133,11 @@ echo "✅ Old processes terminated."
 # Move new binary into shared storage location
 mv "$TEMP_BINARY_PATH" "$BINARY_PATH"
 
+# Copy binary into exec-friendly location and make it runnable for the shell user
+echo -e "\n${BLUE}6b. Copying binary to exec-friendly path (/data/local/tmp)...${NC}"
+adbs "cp $BINARY_PATH $EXEC_PATH && chmod 755 $EXEC_PATH"
+echo "✅ Binary copied to $EXEC_PATH and made executable."
+
 # 7. Configuration
 CONFIG_CHANGED=false
 if [ -f "$CONFIG_PATH" ]; then
@@ -188,19 +194,45 @@ adbs "cat > $ADB_KEEPALIVE_SCRIPT_PATH" << KEEP_ALIVE_EOF
 echo "[\$(date)] BYD-HASS keep-alive started." >> "$ADB_LOG_FILE"
 
 # Path to binary & config (mounted shared storage)
-BINARY_PATH="$BINARY_PATH"
+BIN_EXEC="$EXEC_PATH"            # Exec-friendly path inside Android shell
+BIN_SRC="$BINARY_PATH"           # Persistent copy in shared storage
 CONFIG_PATH="$CONFIG_PATH"
 LOG_FILE="$LOG_FILE"
+ADB_LOG_FILE="$ADB_LOG_FILE"
 
-# Export configuration variables if present
-if [ -f "\$CONFIG_PATH" ]; then
-    . "\$CONFIG_PATH"
+# Track current day for daily log rotation
+CUR_DAY="\$(date +%Y%m%d)"
+
+# Ensure executable exists (copy from shared storage if /data/local/tmp was cleared)
+if [ ! -x "\$BIN_EXEC" ]; then
+    cp "\$BIN_SRC" "\$BIN_EXEC" && chmod 755 "\$BIN_EXEC"
 fi
 
 while true; do
-    if ! pgrep -f $BINARY_PATH > /dev/null; then
+  # Export configuration variables if present
+    if [ -f "\$CONFIG_PATH" ]; then
+        . "\$CONFIG_PATH"
+    fi
+
+    # Rotate logs daily, keep only yesterday's copy
+    NEW_DAY="\$(date +%Y%m%d)"
+    if [ "\$NEW_DAY" != "\$CUR_DAY" ]; then
+        # Remove previous .old
+        rm -f "\$LOG_FILE.old" "\$ADB_LOG_FILE.old"
+        # Rotate current to .old if exists
+        [ -f "\$LOG_FILE" ] && mv "\$LOG_FILE" "\$LOG_FILE.old"
+        [ -f "\$ADB_LOG_FILE" ] && mv "\$ADB_LOG_FILE" "\$ADB_LOG_FILE.old"
+        CUR_DAY="\$NEW_DAY"
+    fi
+
+    # Ensure executable exists (copy from shared storage if /data/local/tmp was cleared)
+    if [ ! -x "\$BIN_EXEC" ]; then
+        cp "\$BIN_SRC" "\$BIN_EXEC" && chmod 755 "\$BIN_EXEC"
+    fi
+
+    if ! pgrep -f "\$BIN_EXEC" > /dev/null; then
         echo "[\$(date)] BYD-HASS not running. Starting it..." >> "$ADB_LOG_FILE"
-        nohup $BINARY_PATH >> \$LOG_FILE 2>&1 &
+        nohup "\$BIN_EXEC" >> \$LOG_FILE 2>&1 &
     fi
     sleep 10
 done
@@ -223,6 +255,11 @@ fi
 # that the external keep-alive guardian is running on the Android side.
 
 exec >> "$INTERNAL_LOG_FILE" 2>&1
+
+# --- Simple Log Rotation for starter log ---
+if [ -f "$INTERNAL_LOG_FILE" ]; then
+    mv -f "$INTERNAL_LOG_FILE" "$INTERNAL_LOG_FILE.old"
+fi
 
 echo "---"
 echo "[\$(date)] Starter script running."
