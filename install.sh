@@ -198,34 +198,34 @@ echo "✅ External keep-alive script created."
 echo -e "\n${BLUE}10. Creating Termux:Boot orchestrator script...${NC}"
 cat > "$BOOT_SCRIPT_PATH" << BOOT_EOF
 #!/data/data/com.termux/files/usr/bin/sh
+termux-wake-lock
 
 # Ensure ADB is connected before executing commands
 if ! adb devices | grep -q "$ADB_SERVER"; then
-    adb connect "$ADB_SERVER"
+    adb connect "$ADB_SERVER"  > /dev/null 2>&1
 fi
 
 # This script is the main orchestrator, started by Termux:Boot.
 # It ensures the external guardian is running, then starts the main app.
-
-termux-wake-lock
 
 exec >> "$INTERNAL_LOG_FILE" 2>&1
 
 echo "---"
 echo "[\$(date)] Orchestrator started."
 
-. "$CONFIG_PATH"
 while true; do
-    PROCESS_COUNT=$(adb -s "$ADB_SERVER" shell "pgrep -f $ADB_KEEPALIVE_SCRIPT_NAME" | wc -l)
-    if [ $PROCESS_COUNT -gt 1 ]; then
+    PROCESS_COUNT=$(adb -s "$ADB_SERVER" shell "pgrep -f $ADB_KEEPALIVE_SCRIPT_NAME" | wc -l | tr -d '[:space:]')
+    if [ "${PROCESS_COUNT:-0}" -gt 1 ]; then
         echo "[\$(date)] External guardian is already running."
 
     else
         echo "[\$(date)] External guardian not found. Starting it..."
-        adbs "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
+        adb -s "$ADB_SERVER" shell "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
     fi
 
     echo "[\$(date)] Starting byd-hass service..."
+
+    . $CONFIG_PATH
 
     $BINARY_PATH
 

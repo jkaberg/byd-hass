@@ -2,9 +2,10 @@ package location
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -102,43 +103,32 @@ func (p *TermuxLocationProvider) backgroundLocationFetcher() {
 
 // fetchLocationData performs the actual location fetch with timeout
 func (p *TermuxLocationProvider) fetchLocationData() {
-	p.logger.Debug("Fetching location from Termux API (background)")
+	p.logger.Debug("Fetching location via dumpsys (background)")
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(p.ctx, p.fetchTimeout)
 	defer cancel()
 
-	// Create command with context for timeout
-	cmd := exec.CommandContext(ctx, "/data/data/com.termux/files/usr/bin/termux-location", "-p", "gps", "-r", "once")
+	// On Android, dumpsys is located in /system/bin
+	cmd := exec.CommandContext(ctx, "/system/bin/dumpsys", "location")
 
-	// Run command with timeout
 	output, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			p.logger.Warn("Location fetch timed out after 15 seconds")
 		} else {
-			p.logger.WithError(err).Debug("termux-location not available or failed")
+			p.logger.WithError(err).Debug("dumpsys location failed")
 		}
 
-		// If we don't have any cached data, set a default location
-		p.mu.Lock()
-		if p.cachedData == nil {
-			p.cachedData = &LocationData{
-				Latitude:  0.0,
-				Longitude: 0.0,
-				Timestamp: time.Now(),
-				Provider:  "default",
-			}
-			p.lastFetch = time.Now()
-		}
-		p.mu.Unlock()
+		p.setDefaultLocation()
 		return
 	}
 
-	// Parse JSON output
-	var loc LocationData
-	if err := json.Unmarshal(output, &loc); err != nil {
-		p.logger.WithError(err).Warn("Failed to parse termux-location output")
+	// Parse dumpsys output to LocationData
+	loc, err := parseDumpsysLocation(string(output))
+	if err != nil {
+		p.logger.WithError(err).Warn("Failed to parse dumpsys location output")
+		p.setDefaultLocation()
 		return
 	}
 
@@ -147,7 +137,7 @@ func (p *TermuxLocationProvider) fetchLocationData() {
 
 	// Update cached data
 	p.mu.Lock()
-	p.cachedData = &loc
+	p.cachedData = loc
 	p.lastFetch = time.Now()
 	p.mu.Unlock()
 
@@ -158,6 +148,89 @@ func (p *TermuxLocationProvider) fetchLocationData() {
 		"provider":  loc.Provider,
 		"accuracy":  loc.Accuracy,
 	}).Debug("Successfully fetched and cached location")
+}
+
+// setDefaultLocation ensures we always have some location data when none is available.
+func (p *TermuxLocationProvider) setDefaultLocation() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cachedData == nil {
+		p.cachedData = &LocationData{
+			Latitude:  0.0,
+			Longitude: 0.0,
+			Timestamp: time.Now(),
+			Provider:  "default",
+		}
+		p.lastFetch = time.Now()
+	}
+}
+
+// parseDumpsysLocation extracts GPS (preferred) or Network location information from the dumpsys output.
+// It supports both the "Last Known Locations" block as well as the newer "native internal state" GNSS block.
+func parseDumpsysLocation(out string) (*LocationData, error) {
+	// Prefer GNSS native block first – contains the richest data and is present on many modern Android versions.
+	nativeRe := regexp.MustCompile(`(?s)LatitudeDegrees:\s*([-0-9\.]+).*?LongitudeDegrees:\s*([-0-9\.]+).*?altitudeMeters:\s*([-0-9\.]+).*?speedMetersPerSecond:\s*([-0-9\.]+).*?bearingDegrees:\s*([-0-9\.]+).*?horizontalAccuracyMeters:\s*([-0-9\.]+).*?verticalAccuracyMeters:\s*([-0-9\.]+)`)
+	if m := nativeRe.FindStringSubmatch(out); m != nil {
+		lat, _ := strconv.ParseFloat(m[1], 64)
+		lon, _ := strconv.ParseFloat(m[2], 64)
+		alt, _ := strconv.ParseFloat(m[3], 64)
+		speed, _ := strconv.ParseFloat(m[4], 64)
+		bearing, _ := strconv.ParseFloat(m[5], 64)
+		hAcc, _ := strconv.ParseFloat(m[6], 64)
+		vAcc, _ := strconv.ParseFloat(m[7], 64)
+		return &LocationData{
+			Latitude:         lat,
+			Longitude:        lon,
+			Altitude:         alt,
+			Accuracy:         hAcc,
+			VerticalAccuracy: vAcc,
+			Bearing:          bearing,
+			Speed:            speed,
+			Provider:         "gps",
+		}, nil
+	}
+
+	// Fallback to "Last Known Locations" section – capture provider lines.
+	type providerPattern struct {
+		name string
+		re   *regexp.Regexp
+	}
+
+	patterns := []providerPattern{
+		{
+			name: "gps",
+			re:   regexp.MustCompile(`(?m)^\s*gps:\s*Location\[[^]]*?([\-0-9\.]+),([\-0-9\.]+)[^]]*?(?:alt=([\-0-9\.]+))?[^]]*?(?:hAcc=([\-0-9\.]+))?[^]]*?(?:vAcc=([\-0-9\.]+))?[^]]*?(?:vel=([\-0-9\.]+))?[^]]*?(?:bear(?:=|ing=)([\-0-9\.]+))?[^]]*?]`),
+		},
+		{
+			name: "network",
+			re:   regexp.MustCompile(`(?m)^\s*network:\s*Location\[[^]]*?([\-0-9\.]+),([\-0-9\.]+)[^]]*?(?:alt=([\-0-9\.]+))?[^]]*?(?:hAcc=([\-0-9\.]+))?[^]]*?(?:vAcc=([\-0-9\.]+))?[^]]*?(?:vel=([\-0-9\.]+))?[^]]*?(?:bear(?:=|ing=)([\-0-9\.]+))?[^]]*?]`),
+		},
+	}
+
+	for _, ptn := range patterns {
+		if m := ptn.re.FindStringSubmatch(out); m != nil {
+			lat, _ := strconv.ParseFloat(m[1], 64)
+			lon, _ := strconv.ParseFloat(m[2], 64)
+			alt, _ := strconv.ParseFloat(m[3], 64)
+			hAcc, _ := strconv.ParseFloat(m[4], 64)
+			vAcc, _ := strconv.ParseFloat(m[5], 64)
+			speed, _ := strconv.ParseFloat(m[6], 64)
+			bearing, _ := strconv.ParseFloat(m[7], 64)
+			return &LocationData{
+				Latitude:         lat,
+				Longitude:        lon,
+				Altitude:         alt,
+				Accuracy:         hAcc,
+				VerticalAccuracy: vAcc,
+				Speed:            speed,
+				Bearing:          bearing,
+				Provider:         ptn.name,
+			}, nil
+		}
+	}
+
+	// Could not parse location
+	return nil, fmt.Errorf("no location information found in dumpsys output")
 }
 
 // IsLocationAvailable returns whether location data is available
