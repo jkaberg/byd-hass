@@ -12,6 +12,11 @@
 # Disable strict error handling for interactive and ADB setup steps
 #set +e
 
+# Re-attach stdin to the user's terminal when the script is executed through a pipe (e.g. curl | bash)
+if [ ! -t 0 ] && [ -t 1 ] && [ -e /dev/tty ]; then
+  exec < /dev/tty
+fi
+
 # --- Configuration ---
 # Termux-internal paths
 INSTALL_DIR="$HOME/.byd-hass"
