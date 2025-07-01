@@ -18,21 +18,23 @@ if [ ! -t 0 ] && [ -t 1 ] && [ -e /dev/tty ]; then
 fi
 
 # --- Configuration ---
-# Termux-internal paths
-INSTALL_DIR="$HOME/.byd-hass"
+# Shared storage paths (primary location for binary & config)
 BINARY_NAME="byd-hass"
-BINARY_PATH="$INSTALL_DIR/$BINARY_NAME"
-CONFIG_PATH="$INSTALL_DIR/config.env"
-LOG_FILE="$INSTALL_DIR/byd-hass.log"
+SHARED_DIR="/storage/emulated/0/bydhass"
+BINARY_PATH="$SHARED_DIR/$BINARY_NAME"
+CONFIG_PATH="$SHARED_DIR/config.env"
+LOG_FILE="$SHARED_DIR/byd-hass.log"
+
+# Termux-local paths (used only for the Termux:Boot starter logs)
+INSTALL_DIR="$HOME/.byd-hass"
 INTERNAL_LOG_FILE="$INSTALL_DIR/starter.log"
 
-# Termux:Boot script (The Orchestrator)
+# Termux:Boot script (The starter that keeps the external guardian alive)
 BOOT_DIR="$HOME/.termux/boot"
 BOOT_SCRIPT_NAME="byd-hass-starter.sh"
 BOOT_SCRIPT_PATH="$BOOT_DIR/$BOOT_SCRIPT_NAME"
 
-# ADB-accessible shared storage paths (The External Guardian)
-SHARED_DIR="/storage/emulated/0/bydhass"
+# External guardian (runs under Android's 'sh')
 ADB_KEEPALIVE_SCRIPT_NAME="keep-alive.sh"
 ADB_KEEPALIVE_SCRIPT_PATH="$SHARED_DIR/$ADB_KEEPALIVE_SCRIPT_NAME"
 ADB_LOG_FILE="$SHARED_DIR/keep-alive.log"
@@ -72,12 +74,12 @@ echo -e "${GREEN}🚗 BYD-HASS Bootstrapping Installer${NC}"
 # 1. Setup Termux Environment
 echo -e "\n${BLUE}1. Setting up Termux environment...${NC}"
 echo "Installing dependencies (adb, curl, jq, termux-api)..."
-pkg install -y android-tools curl jq termux-api >/dev/null 2>&1
+pkg install -y android-tools curl jq >/dev/null 2>&1
 echo "✅ Environment ready."
 
 # 2. Explain Manual Steps
 echo -e "\n${BLUE}2. Important Manual Steps Required:${NC}"
-echo -e "${YELLOW}   - You must install the Diplus, Termux:Boot and Termux:API apps from Github (see README.md),${NC}"
+echo -e "${YELLOW}   - You must install the Diplus and Termux:Boot apps from Github (see README.md),${NC}"
 echo -e "${YELLOW}   - and make sure you configured the apps according to the app instructions.${NC}"
 echo -e "${YELLOW}   - You must enable 'Wireless debugging' in Android Developer Options.${NC}"
 read -p "Press [Enter] to continue once you have completed these steps..."
@@ -98,8 +100,11 @@ read -p "Press [Enter] to continue once you have completed these steps..." || tr
 
 # 4. Create Directories
 echo -e "\n${BLUE}4. Creating necessary directories...${NC}"
-mkdir -p "$INSTALL_DIR"
-mkdir -p "$BOOT_DIR"
+# Local directories for logs
+mkdir -p "$INSTALL_DIR" 2>/dev/null || true
+# Starter script directory
+mkdir -p "$BOOT_DIR" 2>/dev/null || true
+# Shared storage on Android side (binary + config + logs)
 adbs "mkdir -p $SHARED_DIR"
 echo "✅ Directories created."
 
@@ -124,7 +129,7 @@ pkill -f "$BOOT_SCRIPT_NAME" 2>/dev/null || true
 pkill -f "$BINARY_PATH" 2>/dev/null || true
 echo "✅ Old processes terminated."
 
-# Move new binary into place
+# Move new binary into shared storage location
 mv "$TEMP_BINARY_PATH" "$BINARY_PATH"
 
 # 7. Configuration
@@ -180,13 +185,22 @@ fi
 echo -e "\n${BLUE}9. Creating external keep-alive script...${NC}"
 adbs "cat > $ADB_KEEPALIVE_SCRIPT_PATH" << KEEP_ALIVE_EOF
 #!/system/bin/sh
-echo "[\$(date)] External keep-alive service started." >> "$ADB_LOG_FILE"
+echo "[\$(date)] BYD-HASS keep-alive started." >> "$ADB_LOG_FILE"
+
+# Path to binary & config (mounted shared storage)
+BINARY_PATH="$BINARY_PATH"
+CONFIG_PATH="$CONFIG_PATH"
+LOG_FILE="$LOG_FILE"
+
+# Export configuration variables if present
+if [ -f "\$CONFIG_PATH" ]; then
+    . "\$CONFIG_PATH"
+fi
+
 while true; do
-    if ! pgrep -x "com.termux" > /dev/null; then
-        echo "[\$(date)] Termux not running. Starting it..." >> "$ADB_LOG_FILE"
-        am start -n com.termux/.HomeActivity
-        sleep 2
-        input keyevent KEYCODE_HOME
+    if ! pgrep -f $BINARY_PATH > /dev/null; then
+        echo "[\$(date)] BYD-HASS not running. Starting it..." >> "$ADB_LOG_FILE"
+        nohup $BINARY_PATH >> \$LOG_FILE 2>&1 &
     fi
     sleep 10
 done
@@ -205,32 +219,23 @@ if ! adb devices | grep -q "$ADB_SERVER"; then
     adb connect "$ADB_SERVER"  > /dev/null 2>&1
 fi
 
-# This script is the main orchestrator, started by Termux:Boot.
-# It ensures the external guardian is running, then starts the main app.
+# This script is the starter, launched by Termux:Boot. It only ensures
+# that the external keep-alive guardian is running on the Android side.
 
 exec >> "$INTERNAL_LOG_FILE" 2>&1
 
 echo "---"
-echo "[\$(date)] Orchestrator started."
+echo "[\$(date)] Starter script running."
 
 while true; do
     PROCESS_COUNT=$(adb -s "$ADB_SERVER" shell "pgrep -f $ADB_KEEPALIVE_SCRIPT_NAME" | wc -l | tr -d '[:space:]')
-    if [ "${PROCESS_COUNT:-0}" -gt 1 ]; then
-        echo "[\$(date)] External guardian is already running."
-
-    else
-        echo "[\$(date)] External guardian not found. Starting it..."
+    if [ "${PROCESS_COUNT:-0}" -lt 1 ]; then
+        echo "[\$(date)] Keep-alive not running. Starting it..."
         adb -s "$ADB_SERVER" shell "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
+    else
+        echo "[\$(date)] Keep-alive already running."
     fi
-
-    echo "[\$(date)] Starting byd-hass service..."
-
-    . $CONFIG_PATH
-
-    $BINARY_PATH
-
-    echo "[\$(date)] Service stopped with exit code \$?. Restarting in 30 seconds..."
-    sleep 30
+    sleep 60
 done >> "$LOG_FILE"
 BOOT_EOF
 chmod +x "$BOOT_SCRIPT_PATH"

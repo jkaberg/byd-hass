@@ -87,7 +87,7 @@ func (p *TermuxLocationProvider) backgroundLocationFetcher() {
 	p.fetchLocationData()
 
 	// Set up periodic fetching
-	ticker := time.NewTicker(90 * time.Second) // Fetch every 90 seconds
+	ticker := time.NewTicker(10 * time.Second) // Fetch every 90 seconds
 	defer ticker.Stop()
 
 	for {

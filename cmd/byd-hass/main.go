@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/jkaberg/byd-hass/internal/config"
 	"github.com/jkaberg/byd-hass/internal/location"
 	"github.com/jkaberg/byd-hass/internal/mqtt"
-	"github.com/jkaberg/byd-hass/internal/notify"
 	"github.com/jkaberg/byd-hass/internal/sensors"
 	"github.com/jkaberg/byd-hass/internal/transmission"
 	"github.com/sirupsen/logrus"
@@ -93,9 +91,6 @@ func main() {
 
 	// Use a custom DNS resolver to bypass broken localhost resolvers on Termux/Android
 	setupCustomDNSResolver(logger)
-
-	// Setup Termux notifier (silent noop on non-Android environments)
-	notifier := notify.NewTermuxNotifier(logger)
 
 	logger.WithFields(logrus.Fields{
 		"version":              version,
@@ -175,9 +170,6 @@ func main() {
 	if mqttTransmitter == nil && abrpTransmitter == nil {
 		logger.Warn("No transmitters configured, data will only be cached")
 	}
-
-	// Start background goroutine that updates Termux notification when status changes
-	go monitorAndNotify(ctx, notifier, mqttTransmitter, abrpTransmitter, logger)
 
 	// Create tickers for different intervals
 	diplusTicker := time.NewTicker(config.DiplusPollInterval)
@@ -587,57 +579,4 @@ func setupCustomDNSResolver(logger *logrus.Logger) {
 			return conn, nil
 		},
 	}
-}
-
-// monitorAndNotify periodically checks transmitter connection status and updates the
-// persistent Termux notification. The notification is only updated when the status
-// string changes to avoid spamming the user.
-func monitorAndNotify(
-	ctx context.Context,
-	notifier *notify.TermuxNotifier,
-	mqttTx *transmission.MQTTTransmitter,
-	abrpTx *transmission.ABRPTransmitter,
-	logger *logrus.Logger,
-) {
-	var lastMsg string
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			msg := buildStatusMessage(mqttTx, abrpTx)
-			if msg != lastMsg {
-				notifier.Notify("BYD-HASS", msg)
-				lastMsg = msg
-				logger.Debug("Updated Termux notification: " + msg)
-			}
-		}
-	}
-}
-
-// buildStatusMessage constructs a short human-readable status string based on the
-// available transmitters.
-func buildStatusMessage(mqttTx *transmission.MQTTTransmitter, abrpTx *transmission.ABRPTransmitter) string {
-	parts := []string{"Running"}
-
-	if mqttTx != nil {
-		if mqttTx.IsConnected() {
-			parts = append(parts, "MQTT ✓")
-		} else {
-			parts = append(parts, "MQTT ✗")
-		}
-	}
-
-	if abrpTx != nil {
-		if abrpTx.IsConnected() {
-			parts = append(parts, "ABRP ✓")
-		} else {
-			parts = append(parts, "ABRP ✗")
-		}
-	}
-
-	return strings.Join(parts, ", ")
 }

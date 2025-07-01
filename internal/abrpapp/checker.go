@@ -35,9 +35,7 @@ func (c *Checker) IsRunning() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx,
-		"/data/data/com.termux/files/usr/bin/adb",
-		"-s", "localhost:5555",
-		"shell", "pgrep", "-x", "com.iternio.abrpapp").Output()
+		"/system/bin/pgrep", "-x", "com.iternio.abrpapp").Output()
 
 	running := false
 	if err == nil && len(strings.TrimSpace(string(out))) > 0 {
