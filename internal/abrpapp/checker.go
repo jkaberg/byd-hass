@@ -75,12 +75,20 @@ func (c *Checker) IsRunning() bool {
 	cmd := exec.CommandContext(ctx2, "adb", "-s", c.device, "shell", "pidof", "com.iternio.abrpapp")
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
+	// pidof returns exit status 1 when the process is not found, which isAdd commentMore actions
+	// the normal signal that the ABRP app is not running. Treat that as a
+	// non-error to avoid noisy warnings in the log.
 	running := err == nil && len(strings.TrimSpace(string(out))) > 0
 	if err != nil && ctx2.Err() == nil {
-		// Only warn if the command itself failed (not just no pid output)
-		c.logger.WithError(err).WithField("stderr", strings.TrimSpace(stderr.String())).Warn("ADB pidof command failed")
-		// In case of device offline errors, force reconnect next time
-		c.connected = false
+		// Check for the common "process not found" case (exit status 1).
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			// This just means the ABRP app is not running; log at debug level.
+			c.logger.Debug("ABRP app not detected (exit status 1)")
+		} else {
+			// Unexpected ADB or shell failure: warn and reset connection state.
+			c.logger.WithError(err).WithField("stderr", strings.TrimSpace(stderr.String())).Warn("ADB pidof command failed")
+			c.connected = false
+		}
 	}
 
 	cancel2()

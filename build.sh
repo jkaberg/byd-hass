@@ -22,9 +22,9 @@ echo -e "${GREEN}Building ${APP_NAME} v${VERSION}${NC}"
 # Create build directory
 mkdir -p ${BUILD_DIR}
 
-# Build for Android ARM64
+# Build for Android ARM64 (GOOS=android avoids restricted syscalls like faccessat2)
 echo -e "${YELLOW}Building for Android ARM64...${NC}"
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o ${BUILD_DIR}/${BINARY_NAME} \
     cmd/byd-hass/main.go
@@ -36,7 +36,7 @@ chmod +x ${BUILD_DIR}/${BINARY_NAME}
 echo -e "${GREEN}Build completed successfully!${NC}"
 echo -e "Binary: ${BUILD_DIR}/${BINARY_NAME}"
 echo -e "Size: $(du -h ${BUILD_DIR}/${BINARY_NAME} | cut -f1)"
-echo -e "Target: Linux ARM64 (Android)"
+echo -e "Target: Android ARM64 (static)"
 
 # Usage instructions
 echo -e "\n${YELLOW}Usage:${NC}"
