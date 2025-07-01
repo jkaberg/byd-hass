@@ -10,13 +10,15 @@ BYD-HASS is a small Go program that turns data from the Diplus API into MQTT mes
    - to MQTT every 60 seconds and are discovered by Home Assistant
    - to ABRP every 10 seconds if an ABRP API key and user token are supplied **and** the ABRP Android app is running (can be disabled with `-require-abrp-app=false`).
 
-## Quick start (Termux)
+## Quick start
+
+From the infotainment with Termux and the other requirements (see below) run the installer:
 
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/jkaberg/byd-hass/main/install.sh)
 ```
 
-The installer downloads the binary, asks for basic settings, and configures Termux:Boot so the program starts automatically and keeps running indefinitely.
+The installer downloads the binary, asks for basic settings, and configures the program to start automatically and keeps running indefinitely.
 
 Requirements:
 - ADB over wireless enabled in the car
