@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jkaberg/byd-hass/internal/abrpapp"
+	"github.com/jkaberg/byd-hass/internal/api"
 	"github.com/jkaberg/byd-hass/internal/cache"
 	"github.com/jkaberg/byd-hass/internal/config"
-	"github.com/jkaberg/byd-hass/internal/diplus"
 	"github.com/jkaberg/byd-hass/internal/location"
+	"github.com/jkaberg/byd-hass/internal/mqtt"
 	"github.com/jkaberg/byd-hass/internal/sensors"
 	"github.com/jkaberg/byd-hass/internal/transmission"
 	"github.com/sirupsen/logrus"
@@ -108,7 +110,7 @@ func main() {
 
 	// Initialize core components
 	diplusURL := fmt.Sprintf("http://%s/api/getDiPars", cfg.DiplusURL)
-	diplusClient := diplus.NewDiplusClient(diplusURL, logger)
+	diplusClient := api.NewDiplusClient(diplusURL, logger)
 	cacheManager := cache.NewManager(logger)
 
 	// Initialize location provider only if ABRP location uploads are enabled
@@ -131,7 +133,7 @@ func main() {
 	var abrpTransmitter *transmission.ABRPTransmitter
 	// Setup MQTT transmitter if configured
 	if cfg.MQTTUrl != "" {
-		mqttClient, err := transmission.NewClient(cfg.MQTTUrl, cfg.DeviceID, logger)
+		mqttClient, err := mqtt.NewClient(cfg.MQTTUrl, cfg.DeviceID, logger)
 		if err != nil {
 			logger.WithError(err).Fatal("Failed to create MQTT client")
 		}
@@ -160,9 +162,9 @@ func main() {
 	}
 
 	// Initialise ABRP app checker if required
-	var abrpAppChecker *transmission.Checker
+	var abrpAppChecker *abrpapp.Checker
 	if cfg.RequireABRPApp {
-		abrpAppChecker = transmission.NewChecker(logger)
+		abrpAppChecker = abrpapp.NewChecker(logger)
 	}
 
 	if mqttTransmitter == nil && abrpTransmitter == nil {
@@ -347,7 +349,7 @@ func setupLogger(verbose bool) *logrus.Logger {
 
 func pollAndFlagChangesAsync(
 	ctx context.Context,
-	diplusClient *diplus.DiplusClient,
+	diplusClient *api.DiplusClient,
 	locationProvider *location.TermuxLocationProvider,
 	cacheManager *cache.Manager,
 	sharedState *SharedState,
@@ -372,7 +374,7 @@ func pollAndFlagChangesAsync(
 
 func pollSensorDataAsync(
 	ctx context.Context,
-	diplusClient *diplus.DiplusClient,
+	diplusClient *api.DiplusClient,
 	locationProvider *location.TermuxLocationProvider,
 	cacheManager *cache.Manager,
 	sharedState *SharedState,
@@ -494,7 +496,7 @@ func transmitToMQTTAsync(
 // initialDataPollAndTransmit performs the first poll and transmission synchronously at startup.
 func initialDataPollAndTransmit(
 	ctx context.Context,
-	diplusClient *diplus.DiplusClient,
+	diplusClient *api.DiplusClient,
 	locationProvider *location.TermuxLocationProvider,
 	cacheManager *cache.Manager,
 	sharedState *SharedState,
@@ -543,7 +545,7 @@ func runDebugMode(cfg *config.Config) {
 	logger.Info("--- Running in Debug Mode ---")
 
 	diplusURL := fmt.Sprintf("http://%s/api/getDiPars", cfg.DiplusURL)
-	diplusClient := diplus.NewDiplusClient(diplusURL, logger)
+	diplusClient := api.NewDiplusClient(diplusURL, logger)
 
 	// In debug mode, we might need more time to query all sensors
 	diplusClient.SetTimeout(30 * time.Second)
