@@ -39,7 +39,7 @@ jobs:
         GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
           -ldflags="-s -w -X main.version=${{ steps.vars.outputs.short_sha }}" \
           -o byd-hass-arm64 \
-          cmd/byd-hass/main.go
+          ./cmd/byd-hass
     
     - name: Create build info
       run: |
@@ -67,9 +67,9 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.vars.outputs.short_sha }}
-        name: "BYD-HASS ${{ steps.vars.outputs.short_sha }}"
+        name: "byd-hass build for commit ${{ steps.vars.outputs.short_sha }}"
         body: |
-          ## BYD-HASS ARM64 Binary Release
+          ## byd-hass Binary Release
           
           **Version:** `${{ steps.vars.outputs.short_sha }}`  
           **Built:** `${{ steps.vars.outputs.timestamp }}`  
@@ -103,7 +103,6 @@ jobs:
           
           ### Changes in this build
           - Built from commit: ${{ github.sha }}
-          - Automatic build from main branch
         files: |
           byd-hass-arm64
           build-info.txt
