@@ -8,6 +8,7 @@ on:
       - '**/*.go'
       - '**/go.mod'
       - '**/go.sum'
+      - 'build.sh'
       - '.github/workflows/build-and-release.yml'
   workflow_dispatch:
 
