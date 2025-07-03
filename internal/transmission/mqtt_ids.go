@@ -24,7 +24,7 @@ var MQTTSensors = []MQTTSensor{
 	{ID: 26, Transmit: true}, // OutsideTemperature
 	{ID: 14, Transmit: true}, // CabinTemperature
 
-	{ID: 95, Transmit: false}, // ChargeGunState (internal only)
+	{ID: 12, Transmit: false}, // ChargeGunState (internal only)
 }
 
 // TransmittedSensorIDs returns the subset of sensor IDs whose Transmit flag is true.

@@ -27,7 +27,7 @@ echo -e "${YELLOW}Building for Android ARM64...${NC}"
 GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o ${BUILD_DIR}/${BINARY_NAME} \
-    cmd/byd-hass/main.go
+    ./cmd/byd-hass
 
 # Make it executable
 chmod +x ${BUILD_DIR}/${BINARY_NAME}
