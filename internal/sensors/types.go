@@ -265,7 +265,7 @@ var AllSensors = []SensorDefinition{
 	{75, "SecondRowRightSeatBelt", "二排右安全带", "Second Row Right Seat Belt", "binary_sensor", "lock", "", 1},
 	{76, "Second Row Center Seat Belt", "二排中安全带", "Second Row Center Seat Belt", "binary_sensor", "lock", "", 1},
 	{77, "ACStatus", "空调状态", "AC Status", "sensor", "", "", 1},
-	{78, "AirVolumeGear", "风量档位", "Air Volume Gear", "sensor", "", "", 1},
+	{78, "FanSpeedLevel", "风量档位", "Fan Speed Level", "sensor", "", "", 1},
 	{79, "ACCirculationMode", "空调循环方式", "AC Circulation Mode", "sensor", "", "", 1},
 	{80, "AC Outlet Mode", "空调出风模式", "AC Outlet Mode", "sensor", "", "", 1},
 	{81, "DriverDoor", "主驾车门", "Driver Door", "binary_sensor", "", "", 1},

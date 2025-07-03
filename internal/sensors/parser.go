@@ -147,23 +147,6 @@ func ToSnakeCase(str string) string {
 	return strings.ToLower(snake)
 }
 
-// GetSensorIDs returns a minimal set of essential sensor IDs for basic vehicle monitoring.
-func GetSensorIDs() []int {
-	return []int{
-		33, // BatteryPercentage
-		2,  // Speed
-		12, // ChargeGunState (needed for derived Charging Status)
-		10, // EnginePower
-		26, // OutsideTemperature
-		3,  // Mileage
-		14, // CabinTemperature
-		53, // LeftFrontTirePressure
-		54, // RightFrontTirePressure
-		55, // LeftRearTirePressure
-		56, // RightRearTirePressure
-	}
-}
-
 // GetAllSensorIDs returns all available sensor IDs
 func GetAllSensorIDs() []int {
 	var ids []int

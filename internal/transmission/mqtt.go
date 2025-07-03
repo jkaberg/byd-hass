@@ -78,8 +78,8 @@ func NewMQTTTransmitter(client *mqtt.Client, deviceID, discoveryPrefix string, l
 // list lean and fully data-driven for now.
 func (t *MQTTTransmitter) getSensorConfigs() []SensorConfig {
 	// Build a lookup table for quick ID → definition mapping
-	idSet := make(map[int]struct{}, len(TransmittedSensorIDs()))
-	for _, id := range TransmittedSensorIDs() {
+	idSet := make(map[int]struct{}, len(sensors.PublishedSensorIDs()))
+	for _, id := range sensors.PublishedSensorIDs() {
 		idSet[id] = struct{}{}
 	}
 
@@ -179,7 +179,7 @@ func (t *MQTTTransmitter) publishDiscoveryConfigs(data *sensors.SensorData) erro
 	for _, config := range sensorConfigs {
 		// Always publish Home-Assistant discovery for allowed sensors even if we don't
 		// currently have a value for them. This guarantees that the full set of
-		// entities defined in MQTTSensorIDs becomes available in the UI right from
+		// entities defined in PublishedSensorIDs becomes available in the UI right from
 		// the start. The ValueTemplate in publishDiscoveryForSensor already
 		// employs a `default(0)` filter, so missing values will not break
 		// rendering.
@@ -220,8 +220,8 @@ func (t *MQTTTransmitter) publishConfigRaw(topic string, config interface{}) err
 func (t *MQTTTransmitter) buildStatePayload(data *sensors.SensorData) ([]byte, error) {
 	state := make(map[string]interface{})
 	// Pre-compute allowed entityIDs in snake_case for quick filtering
-	allowed := make(map[string]struct{}, len(TransmittedSensorIDs()))
-	for _, id := range TransmittedSensorIDs() {
+	allowed := make(map[string]struct{}, len(sensors.PublishedSensorIDs()))
+	for _, id := range sensors.PublishedSensorIDs() {
 		if def := sensors.GetSensorByID(id); def != nil {
 			allowed[sensors.ToSnakeCase(def.FieldName)] = struct{}{}
 		}

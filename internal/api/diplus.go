@@ -200,5 +200,5 @@ func (c *DiplusClient) CompareAllSensors() error {
 func (c *DiplusClient) Poll() (*sensors.SensorData, error) {
 	c.logger.Debug("Polling Diplus API for sensor data...")
 	// For now, we use a minimal set of essential sensors.
-	return c.GetSensorData(sensors.GetSensorIDs())
+	return c.GetSensorData(sensors.PollSensorIDs())
 }
