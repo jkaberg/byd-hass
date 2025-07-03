@@ -22,7 +22,7 @@ var MQTTSensors = []MQTTSensor{
 	{ID: 56, Transmit: true}, // Tire pressures RR
 	{ID: 10, Transmit: true}, // EnginePower
 	{ID: 26, Transmit: true}, // OutsideTemperature
-	{ID: 14, Transmit: true}, // CabinTemperature
+	{ID: 25, Transmit: true}, // CabinTemperature
 
 	{ID: 12, Transmit: false}, // ChargeGunState (internal only)
 }

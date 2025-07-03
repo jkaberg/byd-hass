@@ -290,12 +290,13 @@ fi
 # This script is the starter, launched by Termux:Boot. It only ensures
 # that the external keep-alive guardian is running on the Android side.
 
-exec >> "$INTERNAL_LOG_FILE" 2>&1
-
 # --- Simple Log Rotation for starter log ---
 if [ -f "$INTERNAL_LOG_FILE" ]; then
     mv -f "$INTERNAL_LOG_FILE" "$INTERNAL_LOG_FILE.old"
 fi
+
+# Redirect all subsequent output of this orchestrator session to the fresh log
+exec >> "$INTERNAL_LOG_FILE" 2>&1
 
 echo "---"
 echo "[\$(date)] Starter script running."
@@ -321,7 +322,7 @@ while true; do
         adb -s "$ADB_SERVER" shell "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
     fi
     sleep 60
-done >> "$LOG_FILE"
+done
 BOOT_EOF
 chmod +x "$BOOT_SCRIPT_PATH"
 echo "✅ Termux:Boot orchestrator script created."
