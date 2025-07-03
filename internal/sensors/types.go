@@ -205,7 +205,7 @@ var AllSensors = []SensorDefinition{
 	{14, "MaxBatteryTemp", "最高电池温度", "Maximum Battery Temperature", "sensor", "temperature", "°C", 1},
 	{15, "AvgBatteryTemp", "平均电池温度", "Average Battery Temperature", "sensor", "temperature", "°C", 1},
 	{16, "MinBatteryTemp", "最低电池温度", "Minimum Battery Temperature", "sensor", "", "°C", 1},
-	{17, "MaxBatteryVoltage", "最高电池电压", "Max Battery Voltage", "sensor", "voltage", "V", 1},
+	{17, "MaxBatteryVoltage", "最高电池电压", "Max Battery Voltage", "sensor", "voltage", "V", 1}, // This is the 12V battery voltage
 	{18, "MinBatteryVoltage", "最低电池电压", "Minimum Battery Voltage", "sensor", "", "V", 1},
 	{19, "LastWiperTime", "上次雨刮时间", "Last Wiper Time", "sensor", "timestamp", "", 1},
 	{20, "Weather", "天气", "Weather", "sensor", "distance", "", 1},
@@ -216,7 +216,7 @@ var AllSensors = []SensorDefinition{
 	{26, "OutsideTemperature", "车外温度", "Outside Temperature", "sensor", "temperature", "°C", 1},
 	{27, "DriverACTemp", "主驾驶空调温度", "Driver AC temperature", "sensor", "", "°C", 1},
 	{28, "TemperatureUnit", "温度单位", "Temperature unit", "sensor", "", "", 1},
-	{29, "BatteryCapacity", "电池容量", "Battery Capacity", "sensor", "energy_storage", "kWh", 1},
+	{29, "BatteryCapacity", "电池容量", "Battery Capacity", "sensor", "energy_storage", "kWh", 1}, // seems to be 0 all the time?
 	{30, "SteeringWheelAngle", "方向盘转角", "Steering Wheel Angle", "sensor", "safety", "°", 1},
 	{31, "SteeringWheelSpeed", "方向盘转速", "Steering Sheel Speed", "sensor", "safety", "°/s", 1},
 	{32, "TotalPowerConsumption", "总电耗", "Total Power Consumption", "sensor", "safety", "kWh", 1},
@@ -226,7 +226,7 @@ var AllSensors = []SensorDefinition{
 	{36, "LaneLineCurvature", "车道线曲率", "Lane Line Curvature", "sensor", "timestamp", "", 1},
 	{37, "RightLaneDistance", "右侧线距离", "Right Lane Distance", "sensor", "timestamp", "", 1},
 	{38, "LeftLaneDistance", "左侧线距离", "Left Lane Distance", "sensor", "timestamp", "", 1},
-	{39, "BatteryVoltage", "蓄电池电压", "Battery Voltage", "sensor", "", "", 1},
+	{39, "BatteryVoltage", "蓄电池电压", "Battery Voltage", "sensor", "", "", 1}, // seems to be 0 all the time?
 	{40, "RadarLeftFront", "雷达左前", "Radar Left Front", "sensor", "", "m", 1},
 	{41, "RadarRightFront", "雷达右前", "Radar Right Front", "sensor", "", "m", 1},
 	{42, "RadarLeftRear", "雷达左后", "Radar Left Rear", "sensor", "", "m", 1},

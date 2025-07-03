@@ -39,12 +39,6 @@ var MonitoredSensors = []MonitoredSensor{
 	// Internal-only helpers (not published)
 	{ID: 12, Publish: false}, // ChargeGunState – used for virtual charging_status
 
-	// --- ABRP-specific additions (Publish=false unless we also want them in HA) ---
-	{ID: 29, Publish: true},  // BatteryCapacity  – ABRP capacity & SOE
-	{ID: 17, Publish: true},  // MaxBatteryVoltage – ABRP pack voltage / current est.
-	{ID: 15, Publish: true},  // AvgBatteryTemp    – ABRP battery temp
-	{ID: 77, Publish: false}, // ACStatus          – ABRP HVAC power calc
-	{ID: 78, Publish: false}, // AirVolumeGear/FanSpeedLevel – ABRP HVAC power calc
 }
 
 // PollSensorIDs returns every sensor ID we must include in the Diplus API
