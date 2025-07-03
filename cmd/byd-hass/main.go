@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jkaberg/byd-hass/internal/api"
+	"github.com/jkaberg/byd-hass/internal/app"
 	"github.com/jkaberg/byd-hass/internal/config"
 	"github.com/jkaberg/byd-hass/internal/location"
 	"github.com/jkaberg/byd-hass/internal/mqtt"
@@ -85,7 +86,7 @@ func main() {
 	}
 
 	// Run application ------------------------------------------------------------
-	runApp(ctx, cfg, diplusClient, locProvider, mqttTx, abrpTx, logger)
+	app.Run(ctx, cfg, diplusClient, locProvider, mqttTx, abrpTx, logger)
 
 	<-ctx.Done()
 	logger.Info("BYD-HASS stopped")
