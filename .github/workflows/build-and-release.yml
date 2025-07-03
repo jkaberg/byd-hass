@@ -36,10 +36,10 @@ jobs:
     
     - name: Build ARM64 binary
       run: |
-        GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
-          -ldflags="-s -w -X main.version=${{ steps.vars.outputs.short_sha }}" \
-          -o byd-hass-arm64 \
-          ./cmd/byd-hass
+        chmod +x build.sh
+        ./build.sh
+        # The build script outputs build/byd-hass; rename for release artifact naming
+        mv build/byd-hass byd-hass-arm64
     
     - name: Create build info
       run: |
