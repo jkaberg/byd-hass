@@ -165,11 +165,19 @@ func (p *TermuxLocationProvider) setDefaultLocation() {
 	}
 }
 
+// Pre-compiled regular expressions – compiling on every GPS read is expensive and causes
+// memory churn over long-running sessions, eventually slowing down the Android UI.
+
+var (
+	nativeRe  = regexp.MustCompile(`(?s)LatitudeDegrees:\s*([-0-9\.]+).*?LongitudeDegrees:\s*([-0-9\.]+).*?altitudeMeters:\s*([-0-9\.]+).*?speedMetersPerSecond:\s*([-0-9\.]+).*?bearingDegrees:\s*([-0-9\.]+).*?horizontalAccuracyMeters:\s*([-0-9\.]+).*?verticalAccuracyMeters:\s*([-0-9\.]+)`)
+	gpsRe     = regexp.MustCompile(`(?m)^\s*gps:\s*Location\[[^]]*?([\-0-9\.]+),([\-0-9\.]+)[^]]*?(?:alt=([\-0-9\.]+))?[^]]*?(?:hAcc=([\-0-9\.]+))?[^]]*?(?:vAcc=([\-0-9\.]+))?[^]]*?(?:vel=([\-0-9\.]+))?[^]]*?(?:bear(?:=|ing=)([\-0-9\.]+))?[^]]*?]`)
+	networkRe = regexp.MustCompile(`(?m)^\s*network:\s*Location\[[^]]*?([\-0-9\.]+),([\-0-9\.]+)[^]]*?(?:alt=([\-0-9\.]+))?[^]]*?(?:hAcc=([\-0-9\.]+))?[^]]*?(?:vAcc=([\-0-9\.]+))?[^]]*?(?:vel=([\-0-9\.]+))?[^]]*?(?:bear(?:=|ing=)([\-0-9\.]+))?[^]]*?]`)
+)
+
 // parseDumpsysLocation extracts GPS (preferred) or Network location information from the dumpsys output.
 // It supports both the "Last Known Locations" block as well as the newer "native internal state" GNSS block.
 func parseDumpsysLocation(out string) (*LocationData, error) {
 	// Prefer GNSS native block first – contains the richest data and is present on many modern Android versions.
-	nativeRe := regexp.MustCompile(`(?s)LatitudeDegrees:\s*([-0-9\.]+).*?LongitudeDegrees:\s*([-0-9\.]+).*?altitudeMeters:\s*([-0-9\.]+).*?speedMetersPerSecond:\s*([-0-9\.]+).*?bearingDegrees:\s*([-0-9\.]+).*?horizontalAccuracyMeters:\s*([-0-9\.]+).*?verticalAccuracyMeters:\s*([-0-9\.]+)`)
 	if m := nativeRe.FindStringSubmatch(out); m != nil {
 		lat, _ := strconv.ParseFloat(m[1], 64)
 		lon, _ := strconv.ParseFloat(m[2], 64)
@@ -190,22 +198,11 @@ func parseDumpsysLocation(out string) (*LocationData, error) {
 		}, nil
 	}
 
-	// Fallback to "Last Known Locations" section – capture provider lines.
-	type providerPattern struct {
+	// Friendly loop over the two secondary regexes.
+	patterns := []struct {
 		name string
 		re   *regexp.Regexp
-	}
-
-	patterns := []providerPattern{
-		{
-			name: "gps",
-			re:   regexp.MustCompile(`(?m)^\s*gps:\s*Location\[[^]]*?([\-0-9\.]+),([\-0-9\.]+)[^]]*?(?:alt=([\-0-9\.]+))?[^]]*?(?:hAcc=([\-0-9\.]+))?[^]]*?(?:vAcc=([\-0-9\.]+))?[^]]*?(?:vel=([\-0-9\.]+))?[^]]*?(?:bear(?:=|ing=)([\-0-9\.]+))?[^]]*?]`),
-		},
-		{
-			name: "network",
-			re:   regexp.MustCompile(`(?m)^\s*network:\s*Location\[[^]]*?([\-0-9\.]+),([\-0-9\.]+)[^]]*?(?:alt=([\-0-9\.]+))?[^]]*?(?:hAcc=([\-0-9\.]+))?[^]]*?(?:vAcc=([\-0-9\.]+))?[^]]*?(?:vel=([\-0-9\.]+))?[^]]*?(?:bear(?:=|ing=)([\-0-9\.]+))?[^]]*?]`),
-		},
-	}
+	}{{"gps", gpsRe}, {"network", networkRe}}
 
 	for _, ptn := range patterns {
 		if m := ptn.re.FindStringSubmatch(out); m != nil {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -195,6 +196,11 @@ func main() {
 
 	logger.Debug("BYD-HASS started successfully")
 
+	// Concurrency guards to prevent piling up work when operations take longer than the interval.
+	var pollBusy uint32
+	var mqttBusy uint32
+	var abrpBusy uint32
+
 	// Main loop with multiple tickers
 	for {
 		select {
@@ -206,8 +212,15 @@ func main() {
 			cancel()
 			return
 		case <-diplusTicker.C:
-			// Poll sensor data and flag changes (non-blocking)
-			go pollAndFlagChangesAsync(ctx, diplusClient, locationProvider, cacheManager, sharedState, logger)
+			// Ensure only one poll runs at a time.
+			if !atomic.CompareAndSwapUint32(&pollBusy, 0, 1) {
+				logger.Debug("Previous Diplus poll still running – skipping this tick")
+				break
+			}
+			go func() {
+				defer atomic.StoreUint32(&pollBusy, 0)
+				pollAndFlagChangesAsync(ctx, diplusClient, locationProvider, cacheManager, sharedState, logger)
+			}()
 		case <-func() <-chan time.Time {
 			if abrpTicker != nil {
 				return abrpTicker.C
@@ -232,7 +245,12 @@ func main() {
 					abrpAppAvailable = true
 				}
 
+				if !atomic.CompareAndSwapUint32(&abrpBusy, 0, 1) {
+					logger.Debug("Previous ABRP transmission still running – skipping this tick")
+					break
+				}
 				go func(data *sensors.SensorData) {
+					defer atomic.StoreUint32(&abrpBusy, 0)
 					if err := transmitToABRPAsync(ctx, abrpTransmitter, data, logger); err != nil {
 						logger.WithError(err).Error("ABRP transmission failed")
 					} else {
@@ -255,8 +273,12 @@ func main() {
 			} else if !sharedState.HasUnsentMQTTChanges() {
 				logger.Debug("No unsent changes for MQTT, skipping transmission")
 			} else {
-				// MQTT transmission (non-blocking)
+				if !atomic.CompareAndSwapUint32(&mqttBusy, 0, 1) {
+					logger.Debug("Previous MQTT transmission still running – skipping this tick")
+					break
+				}
 				go func(data *sensors.SensorData) {
+					defer atomic.StoreUint32(&mqttBusy, 0)
 					logger.Debug("Transmitting sensor data to MQTT...")
 					if err := transmitToMQTTAsync(ctx, mqttTransmitter, data, logger); err != nil {
 						logger.WithError(err).Error("MQTT transmission failed")
