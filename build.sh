@@ -24,7 +24,7 @@ mkdir -p ${BUILD_DIR}
 
 # Build for Android ARM64 (GOOS=android avoids restricted syscalls like faccessat2)
 echo -e "${YELLOW}Building for Android ARM64...${NC}"
-GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build \
+GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -a -v \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o ${BUILD_DIR}/${BINARY_NAME} \
     ./cmd/byd-hass
