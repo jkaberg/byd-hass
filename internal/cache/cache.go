@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"math"
 	"reflect"
 	"sync"
 	"time"
@@ -51,17 +52,46 @@ func (m *Manager) Changed(cur *sensors.SensorData) bool {
 // field on temporaries so the comparison isn't affected by the wall-clock.
 func equalNoTimestamp(a, b *sensors.SensorData) bool {
 	aa, bb := *a, *b
-	// Ignore Timestamp and Location fields when checking for changes.
-	// Location updates can contain frequent low-level jitter that is not
-	// relevant for change detection of core vehicle sensors and would
-	// otherwise trigger a transmission every polling cycle.
+	// Ignore Timestamp for change detection.
 	aa.Timestamp = time.Time{}
 	bb.Timestamp = time.Time{}
 
-	aa.Location = nil
-	bb.Location = nil
+	// Location – ignore micro-jitter (<10 m & <5 °).
+	if aa.Location != nil && bb.Location != nil {
+		const distThreshold = 10.0   // metres
+		const bearingThreshold = 5.0 // degrees
+
+		dist := haversineMeters(aa.Location.Latitude, aa.Location.Longitude,
+			bb.Location.Latitude, bb.Location.Longitude)
+
+		bearingDiff := math.Abs(aa.Location.Bearing - bb.Location.Bearing)
+		if bearingDiff > 180 {
+			bearingDiff = 360 - bearingDiff // smallest angular difference
+		}
+
+		if dist < distThreshold && bearingDiff < bearingThreshold {
+			// Movement below thresholds → treat as unchanged
+			aa.Location = nil
+			bb.Location = nil
+		}
+	}
 	return reflect.DeepEqual(aa, bb)
 }
+
+// haversineMeters returns great-circle distance in metres between two lat/lon points.
+func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {
+	const r = 6371000.0 // Earth radius in metres
+	dLat := toRad(lat2 - lat1)
+	dLon := toRad(lon2 - lon1)
+	lat1Rad := toRad(lat1)
+	lat2Rad := toRad(lat2)
+
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(lat1Rad)*math.Cos(lat2Rad)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return r * c
+}
+
+func toRad(deg float64) float64 { return deg * math.Pi / 180 }
 
 // clone returns a shallow copy of the struct. Pointer fields are copied as
 // pointers; this is fine because the values are treated as immutable after
