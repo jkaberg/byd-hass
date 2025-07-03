@@ -38,6 +38,10 @@ type Config struct {
 	ABRPEnhanced    bool   `json:"abrp_enhanced"`     // Use enhanced ABRP telemetry data
 	ABRPLocation    bool   `json:"abrp_location"`     // Include GPS location in ABRP data (if available)
 	ABRPVehicleType string `json:"abrp_vehicle_type"` // ABRP vehicle type for better range estimation
+
+	// Timing intervals (overridable via CLI flags / env vars)
+	MQTTInterval time.Duration `json:"mqtt_interval"` // Interval between MQTT transmissions
+	ABRPInterval time.Duration `json:"abrp_interval"` // Interval between ABRP transmissions
 }
 
 // GetDefaultConfig returns a configuration with sensible defaults
@@ -53,7 +57,11 @@ func GetDefaultConfig() *Config {
 		ABRPEnhanced:    true,    // Use enhanced ABRP data by default
 		ABRPLocation:    true,    // Location ENABLED by default
 		ABRPVehicleType: "byd:*", // Generic BYD vehicle type
-		RequireABRPApp:  true,
+
+		// Default intervals (can be overridden)
+		MQTTInterval:   MQTTTransmitInterval,
+		ABRPInterval:   ABRPTransmitInterval,
+		RequireABRPApp: true,
 	}
 }
 

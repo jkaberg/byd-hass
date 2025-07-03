@@ -51,8 +51,15 @@ func (m *Manager) Changed(cur *sensors.SensorData) bool {
 // field on temporaries so the comparison isn't affected by the wall-clock.
 func equalNoTimestamp(a, b *sensors.SensorData) bool {
 	aa, bb := *a, *b
+	// Ignore Timestamp and Location fields when checking for changes.
+	// Location updates can contain frequent low-level jitter that is not
+	// relevant for change detection of core vehicle sensors and would
+	// otherwise trigger a transmission every polling cycle.
 	aa.Timestamp = time.Time{}
 	bb.Timestamp = time.Time{}
+
+	aa.Location = nil
+	bb.Location = nil
 	return reflect.DeepEqual(aa, bb)
 }
 

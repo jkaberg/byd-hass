@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -97,8 +98,8 @@ func main() {
 		"version":              version,
 		"device_id":            cfg.DeviceID,
 		"diplus_poll_interval": config.DiplusPollInterval,
-		"abrp_interval":        config.ABRPTransmitInterval,
-		"mqtt_interval":        config.MQTTTransmitInterval,
+		"abrp_interval":        cfg.ABRPInterval,
+		"mqtt_interval":        cfg.MQTTInterval,
 	}).Info("Starting BYD-HASS")
 
 	// Create application context
@@ -178,13 +179,13 @@ func main() {
 
 	var abrpTicker *time.Ticker
 	if abrpTransmitter != nil {
-		abrpTicker = time.NewTicker(config.ABRPTransmitInterval)
+		abrpTicker = time.NewTicker(cfg.ABRPInterval)
 		defer abrpTicker.Stop()
 	}
 
 	var mqttTicker *time.Ticker
 	if mqttTransmitter != nil {
-		mqttTicker = time.NewTicker(config.MQTTTransmitInterval)
+		mqttTicker = time.NewTicker(cfg.MQTTInterval)
 		defer mqttTicker.Stop()
 	}
 
@@ -340,6 +341,13 @@ func parseFlags() (*config.Config, bool) {
 	flag.BoolVar(&cfg.RequireABRPApp, "require-abrp-app", requireAbrpDefault,
 		"Require ABRP Android app to be running before sending telemetry (default true)")
 
+	// Transmission interval overrides --------------------------------------
+	// We accept both CLI flags and environment variables containing duration
+	// strings compatible with time.ParseDuration, e.g. "10s", "2m".
+
+	mqttIntervalStr := flag.String("mqtt-interval", getEnvOrDefault("BYD_HASS_MQTT_INTERVAL", ""), "MQTT transmission interval (e.g. 60s)")
+	abrpIntervalStr := flag.String("abrp-interval", getEnvOrDefault("BYD_HASS_ABRP_INTERVAL", ""), "ABRP transmission interval (e.g. 10s)")
+
 	flag.Parse()
 
 	if *showVersion {
@@ -349,6 +357,26 @@ func parseFlags() (*config.Config, bool) {
 
 	// Invert disable flag to set ABRPLocation.
 	cfg.ABRPLocation = !*disableLocation
+
+	// ------------------------------------------------------------------------
+	// After flag parsing, resolve interval overrides (if any).
+	// ------------------------------------------------------------------------
+
+	if *mqttIntervalStr != "" {
+		if d, err := time.ParseDuration(*mqttIntervalStr); err == nil && d > 0 {
+			cfg.MQTTInterval = d
+		} else if v, err2 := strconv.Atoi(*mqttIntervalStr); err2 == nil && v > 0 {
+			cfg.MQTTInterval = time.Duration(v) * time.Second
+		}
+	}
+
+	if *abrpIntervalStr != "" {
+		if d, err := time.ParseDuration(*abrpIntervalStr); err == nil && d > 0 {
+			cfg.ABRPInterval = d
+		} else if v, err2 := strconv.Atoi(*abrpIntervalStr); err2 == nil && v > 0 {
+			cfg.ABRPInterval = time.Duration(v) * time.Second
+		}
+	}
 
 	return cfg, *debug
 }

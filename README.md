@@ -49,6 +49,8 @@ Settings can be supplied as command-line flags or environment variables (prefix 
 | `-device-id`           | `BYD_HASS_DEVICE_ID`         | Unique name for this car (default is auto-generated) |
 | `-verbose`             | `BYD_HASS_VERBOSE`           | Enable extra logging |
 | `-discovery-prefix`    | ―                            | MQTT discovery prefix (default `homeassistant`) |
+| `-mqtt-interval`       | `BYD_HASS_MQTT_INTERVAL`      | Override MQTT transmission interval (`60s` default) |
+| `-abrp-interval`       | `BYD_HASS_ABRP_INTERVAL`      | Override ABRP transmission interval (`10s` default) |
 
 ## Home Assistant sensors
 
