@@ -99,7 +99,7 @@ This project is not affiliated with BYD, the Diplus authors, Home Assistant, or 
 
 1. **Message sizes** – The program currently sends three types of outbound traffic:
    * **MQTT state payload** (`byd_car/<device>/state`). A full JSON state containing ~25 numeric/boolean fields plus topic and protocol overhead is ~ **130 bytes** per publish.
-   * **ABRP telemetry call** (HTTPS `POST`). The documented ABRP payload is smaller than the MQTT state but the TLS, HTTP and header overheads are higher. One update is ~ **500 bytes** on the wire.
+   * **ABRP telemetry call** (HTTPS `POST`). The program gzip-compresses the form body. One update is ~ **200 bytes** on the wire.
    * **MQTT keep-alive (PINGREQ + PINGRESP)**. Over WebSocket/TCP a full round-trip (frame + TCP/IP headers each way) is ~ **100 bytes**.
 2. **Send intervals** –
    * **MQTT**: every **60 s** *but only while at least one value has changed*. When the car is parked usually nothing changes, so the broker typically only sees a retain/heartbeat publish once an hour. During driving almost every minute triggers an update.
@@ -111,10 +111,10 @@ This project is not affiliated with BYD, the Diplus authors, Home Assistant, or 
 
 | Scenario | Driving / day | MQTT state | ABRP | MQTT ping | **Total** |
 | -------- | ------------- | ---------- | ----- | --------- | --------- |
-| **Typical** (default) | 1 h | 60 msg × 130 B × 30 d = **0.23 MB** | 360 msg × 500 B × 30 d = **5.4 MB** | 1 440 ping × 100 B × 30 d = **4.3 MB** | **≈ 10 MB** |
-| Light usage | 30 min | 0.11 MB | 2.7 MB | 4.3 MB | **≈ 7 MB** |
-| Heavy usage | 4 h | 0.9 MB | 21.6 MB | 4.3 MB | **≈ 27 MB** |
+| **Typical** (default) | 1 h | 60 msg × 130 B × 30 d = **0.23 MB** | 360 msg × 200 B × 30 d = **2.2 MB** | 1 440 ping × 100 B × 30 d = **4.3 MB** | **≈ 6.7 MB** |
+| Light usage | 30 min | 0.11 MB | 1.1 MB | 4.3 MB | **≈ 5.5 MB** |
+| Heavy usage | 4 h | 0.9 MB | 1 440 msg × 200 B × 30 d = **8.6 MB** | 4.3 MB | **≈ 13.8 MB** |
 
 Even in the heavy-usage scenario the program stays well under 30 MB per month, which is only ~3 % of the 1 GB cellular plan BYD provides in many countries.
 
-*Tip: if you do **not** need ABRP telemetry you can disable it (omit `-abrp-api-key`) and cut data usage by roughly **90 %**.*
+*Tip: if you do **not** need ABRP telemetry you can disable it (omit `-abrp-api-key`) and cut data usage by roughly **90 %** of the already small totals above.*
