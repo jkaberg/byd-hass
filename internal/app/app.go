@@ -16,6 +16,28 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Adaptive ABRP intervals ------------------------------------------------
+const (
+	abrpDrivingInterval = 10 * time.Second  // default while moving / charging
+	abrpIdleInterval    = 120 * time.Second // when parked & not charging
+)
+
+func computeABRPInterval(data *sensors.SensorData) time.Duration {
+	if data == nil {
+		return abrpDrivingInterval
+	}
+	// Fast cadence when speed > 0 km/h
+	if data.Speed != nil && *data.Speed > 0 {
+		return abrpDrivingInterval
+	}
+	// Fast cadence when actively charging
+	if sensors.DeriveChargingStatus(data) == "charging" {
+		return abrpDrivingInterval
+	}
+	// Otherwise we're parked / idle
+	return abrpIdleInterval
+}
+
 // Run launches the hexagonal architecture and blocks until ctx is cancelled.
 func Run(
 	parentCtx context.Context,
@@ -113,7 +135,13 @@ func Run(
 				now := time.Now()
 				for i := range states {
 					st := &states[i]
-					if now.Sub(st.lastSent) < st.interval {
+					// Dynamic interval for ABRP depending on vehicle state.
+					interval := st.interval
+					if st.name == "ABRP" {
+						interval = computeABRPInterval(latest)
+					}
+
+					if now.Sub(st.lastSent) < interval {
 						continue
 					}
 					if !domain.Changed(st.lastSnap, latest) {
