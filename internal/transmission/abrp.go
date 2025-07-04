@@ -1,18 +1,16 @@
 package transmission
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"sync/atomic"
-
-	"compress/gzip"
 
 	"github.com/jkaberg/byd-hass/internal/sensors"
 	"github.com/sirupsen/logrus"
@@ -129,23 +127,16 @@ func (t *ABRPTransmitter) TransmitWithContext(ctx context.Context, data *sensors
 	form := url.Values{}
 	form.Add("tlm", string(payload))
 
-	// Compress the form body to reduce data usage (ABRP supports gzip)
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	_, _ = gz.Write([]byte(form.Encode()))
-	gz.Close()
-
 	apiURL := fmt.Sprintf("https://api.iternio.com/1/tlm/send?api_key=%s&token=%s", t.apiKey, t.token)
 
-	// Create HTTP request bound to ctx with compressed body
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(buf.Bytes()))
+	// Create HTTP request bound to ctx (no compression)
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to create ABRP request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", "byd-hass/1.0.0")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Content-Encoding", "gzip")
 
 	// Send request
 	resp, err := t.httpClient.Do(req)
