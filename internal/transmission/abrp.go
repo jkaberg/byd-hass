@@ -1,6 +1,7 @@
 package transmission
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -110,12 +111,13 @@ func NewABRPTransmitter(apiKey, token string, logger *logrus.Logger) *ABRPTransm
 	}
 }
 
-// Transmit sends sensor data to ABRP
-func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
+// TransmitWithContext sends sensor data to ABRP using the provided context.
+// If ctx is cancelled or times out, the request is aborted.
+func (t *ABRPTransmitter) TransmitWithContext(ctx context.Context, data *sensors.SensorData) error {
 	// Convert sensor data to ABRP telemetry format
 	telemetry := t.buildTelemetryData(data)
 
-	// Marshal to JSON
+	// Marshal to JSON (compact, no whitespace)
 	payload, err := json.Marshal(telemetry)
 	if err != nil {
 		return fmt.Errorf("failed to marshal ABRP telemetry: %w", err)
@@ -127,8 +129,8 @@ func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
 
 	apiURL := fmt.Sprintf("https://api.iternio.com/1/tlm/send?api_key=%s&token=%s", t.apiKey, t.token)
 
-	// Create HTTP request
-	req, err := http.NewRequest("POST", apiURL, strings.NewReader(form.Encode()))
+	// Create HTTP request bound to ctx
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("failed to create ABRP request: %w", err)
 	}
@@ -140,31 +142,44 @@ func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
 		atomic.StoreUint32(&t.healthy, 0)
+		// Close idle connections to drop any possibly half-open sockets after
+		// network hand-over (Wi-Fi ↔ LTE).
+		if tr, ok := t.httpClient.Transport.(*http.Transport); ok {
+			tr.CloseIdleConnections()
+		}
 		return fmt.Errorf("failed to send ABRP request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		err := fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
 		atomic.StoreUint32(&t.healthy, 0)
-		return err
+		if tr, ok := t.httpClient.Transport.(*http.Transport); ok {
+			tr.CloseIdleConnections()
+		}
+		return fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
 	}
 
 	atomic.StoreUint32(&t.healthy, 1)
 
-	// Log the entire telemetry object for full visibility
-	logPayload, err := json.Marshal(telemetry)
-	if err != nil {
-		t.logger.WithError(err).Warn("Failed to marshal telemetry for logging")
+	// Log the entire telemetry object for full visibility (debug level)
+	if t.logger.IsLevelEnabled(logrus.DebugLevel) {
+		if logPayload, err := json.Marshal(telemetry); err == nil {
+			t.logger.WithFields(logrus.Fields{
+				"status_code": resp.StatusCode,
+				"payload":     string(logPayload),
+			}).Debug("Successfully transmitted to ABRP")
+		} else {
+			t.logger.WithError(err).Warn("Failed to marshal telemetry for logging")
+		}
 	}
 
-	t.logger.WithFields(logrus.Fields{
-		"status_code": resp.StatusCode,
-		"payload":     string(logPayload),
-	}).Debug("Successfully transmitted to ABRP")
-
 	return nil
+}
+
+// Transmit is kept for backward-compatibility and uses Background context.
+func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
+	return t.TransmitWithContext(context.Background(), data)
 }
 
 // IsConnected returns true when the last transmission attempt succeeded.

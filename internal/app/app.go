@@ -121,6 +121,12 @@ func Run(
 					}
 					if err := st.sendFn(ctx, latest, logger); err != nil {
 						logger.WithError(err).Warn(st.name + " transmit failed")
+						// Ensure we retry even if no data change.
+						// Reset lastSnap so Changed() will evaluate to true on the next
+						// scheduler tick, and bump lastSent so we still respect the
+						// configured transmission interval.
+						st.lastSnap = nil
+						st.lastSent = now
 					} else {
 						st.lastSnap = latest
 						st.lastSent = now
@@ -139,9 +145,8 @@ func transmitToABRPAsync(ctx context.Context, tx *transmission.ABRPTransmitter, 
 	if tx == nil || data == nil {
 		return nil
 	}
-	// Transmitter has its own internal timeouts; context reserved for future.
-	_ = ctx
-	if err := tx.Transmit(data); err != nil {
+	// Pass the caller context down so that a global cancellation stops in-flight HTTP.
+	if err := tx.TransmitWithContext(ctx, data); err != nil {
 		return fmt.Errorf("ABRP transmit failed: %w", err)
 	}
 	return nil
