@@ -278,6 +278,9 @@ func (t *MQTTTransmitter) buildStatePayload(data *sensors.SensorData) ([]byte, e
 // Transmit sends sensor data to MQTT
 func (t *MQTTTransmitter) Transmit(data *sensors.SensorData) error {
 	if !t.client.IsConnected() {
+		// Best-effort publish "offline" retained message (will silently drop if
+		// the client really is disconnected). Ignore error.
+		_ = t.publishAvailability(false)
 		return fmt.Errorf("MQTT client not connected")
 	}
 

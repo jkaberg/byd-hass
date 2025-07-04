@@ -66,6 +66,10 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 	opts.SetConnectTimeout(5 * time.Second)
 	opts.SetMaxReconnectInterval(10 * time.Second)
 
+	// Last Will – broker publishes "offline" retained if this client drops unexpectedly.
+	willTopic := fmt.Sprintf("byd_car/%s/availability", deviceID)
+	opts.SetWill(willTopic, "offline", 1, true)
+
 	// Set credentials if provided in URL
 	if parsedURL.User != nil {
 		username := parsedURL.User.Username()
