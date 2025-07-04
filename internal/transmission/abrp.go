@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/jkaberg/byd-hass/internal/sensors"
+	"github.com/jkaberg/byd-hass/internal/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -103,7 +104,7 @@ func NewABRPTransmitter(apiKey, token string, logger *logrus.Logger) *ABRPTransm
 		apiKey: apiKey,
 		token:  token,
 		httpClient: &http.Client{
-			Timeout:   10 * time.Second,
+			Timeout:   config.ABRPTimeout,
 			Transport: transport,
 		},
 		logger: logger,

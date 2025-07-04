@@ -103,7 +103,13 @@ func Run(
 				return ctx.Err()
 			case snap, ok := <-sub:
 				if !ok {
-					return nil
+					// Our subscription was dropped (likely because the consumer was
+					// temporarily blocked and the bus evicted the slow subscriber).
+					// Re-subscribe to keep the scheduler alive instead of terminating
+					// the whole transmission loop.
+					logger.Warn("scheduler: subscription channel closed – re-subscribing")
+					sub = messageBus.Subscribe()
+					continue
 				}
 				latest = snap
 			case <-ticker.C:

@@ -21,7 +21,10 @@ func New() *Bus { return &Bus{} }
 // Subscribe returns a read-only channel that will receive all future
 // SensorData snapshots.
 func (b *Bus) Subscribe() <-chan *sensors.SensorData {
-	ch := make(chan *sensors.SensorData, 1) // small buffer avoids blocking
+	// A slightly larger buffer tolerates brief stalls (e.g. network hiccups
+	// causing a transmitter to block for a few seconds) without triggering
+	// the slow-subscriber eviction logic.
+	ch := make(chan *sensors.SensorData, 5)
 	b.mu.Lock()
 	b.subscribers = append(b.subscribers, ch)
 	b.mu.Unlock()
