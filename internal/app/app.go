@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jkaberg/byd-hass/internal/api"
@@ -141,7 +142,31 @@ func transmitToABRPAsync(ctx context.Context, tx *transmission.ABRPTransmitter, 
 	}
 	// Transmitter has its own internal timeouts; context reserved for future.
 	_ = ctx
+	
 	if err := tx.Transmit(data); err != nil {
+		// Get detailed connection status for better error reporting
+		status := tx.GetConnectionStatus()
+		
+		// Log with enhanced context
+		logFields := logrus.Fields{
+			"error":               err.Error(),
+			"connected":           status["connected"],
+			"consecutive_failures": status["consecutive_failures"],
+		}
+		
+		// Add backoff information if available
+		if inBackoff, ok := status["in_backoff"].(bool); ok && inBackoff {
+			logFields["remaining_backoff"] = status["remaining_backoff"]
+			logFields["current_backoff_delay"] = status["current_backoff_delay"]
+		}
+		
+		// Different log levels based on error type
+		if strings.Contains(err.Error(), "skipping transmission due to backoff") {
+			logger.WithFields(logFields).Debug("ABRP transmission skipped due to backoff")
+		} else {
+			logger.WithFields(logFields).Warn("ABRP transmission failed after retries")
+		}
+		
 		return fmt.Errorf("ABRP transmit failed: %w", err)
 	}
 	return nil

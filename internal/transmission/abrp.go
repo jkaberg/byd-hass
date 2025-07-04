@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"math"
 
 	"sync/atomic"
 
@@ -48,6 +49,13 @@ type ABRPTransmitter struct {
 	httpClient *http.Client
 	logger     *logrus.Logger
 	healthy    uint32 // 1 = last transmission successful, 0 = failed/unknown
+	
+	// Retry and backoff state
+	consecutiveFailures uint32
+	lastFailureTime     time.Time
+	maxRetries          int
+	baseBackoffDelay    time.Duration
+	maxBackoffDelay     time.Duration
 }
 
 // ABRPTelemetry represents the telemetry data format for ABRP
@@ -97,21 +105,116 @@ func NewABRPTransmitter(apiKey, token string, logger *logrus.Logger) *ABRPTransm
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+		// Force new connections to handle network switches better
+		DisableKeepAlives:     false,
+		MaxIdleConnsPerHost:   2,
+		ResponseHeaderTimeout: 15 * time.Second,
 	}
 
 	return &ABRPTransmitter{
 		apiKey: apiKey,
 		token:  token,
 		httpClient: &http.Client{
-			Timeout:   10 * time.Second,
+			Timeout:   15 * time.Second, // Increased from 10s to handle poor connections
 			Transport: transport,
 		},
 		logger: logger,
+		
+		// Retry configuration
+		maxRetries:       3,
+		baseBackoffDelay: 2 * time.Second,
+		maxBackoffDelay:  30 * time.Second,
 	}
 }
 
-// Transmit sends sensor data to ABRP
+// Transmit sends sensor data to ABRP with retry logic and exponential backoff
 func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
+	// Check if we should skip due to recent failures and backoff
+	if t.shouldSkipDueToBackoff() {
+		return fmt.Errorf("skipping transmission due to backoff after consecutive failures")
+	}
+
+	// Attempt transmission with retries
+	err := t.transmitWithRetries(data)
+	
+	if err != nil {
+		// Increment failure counter and record time
+		failures := atomic.AddUint32(&t.consecutiveFailures, 1)
+		t.lastFailureTime = time.Now()
+		atomic.StoreUint32(&t.healthy, 0)
+		
+		t.logger.WithFields(logrus.Fields{
+			"consecutive_failures": failures,
+			"error": err.Error(),
+		}).Warn("ABRP transmission failed after retries")
+		
+		return err
+	}
+	
+	// Reset failure state on success
+	atomic.StoreUint32(&t.consecutiveFailures, 0)
+	atomic.StoreUint32(&t.healthy, 1)
+	
+	return nil
+}
+
+// shouldSkipDueToBackoff determines if we should skip transmission due to exponential backoff
+func (t *ABRPTransmitter) shouldSkipDueToBackoff() bool {
+	failures := atomic.LoadUint32(&t.consecutiveFailures)
+	if failures == 0 {
+		return false
+	}
+	
+	// Calculate exponential backoff delay
+	backoffDelay := time.Duration(math.Pow(2, float64(failures-1))) * t.baseBackoffDelay
+	if backoffDelay > t.maxBackoffDelay {
+		backoffDelay = t.maxBackoffDelay
+	}
+	
+	return time.Since(t.lastFailureTime) < backoffDelay
+}
+
+// transmitWithRetries attempts transmission with retry logic
+func (t *ABRPTransmitter) transmitWithRetries(data *sensors.SensorData) error {
+	var lastErr error
+	
+	for attempt := 0; attempt <= t.maxRetries; attempt++ {
+		if attempt > 0 {
+			// Wait before retry with jitter to avoid thundering herd
+			retryDelay := time.Duration(attempt) * time.Second
+			jitter := time.Duration(attempt * 500) * time.Millisecond
+			time.Sleep(retryDelay + jitter)
+			
+			t.logger.WithFields(logrus.Fields{
+				"attempt": attempt + 1,
+				"max_retries": t.maxRetries + 1,
+			}).Debug("Retrying ABRP transmission")
+		}
+		
+		err := t.doTransmit(data)
+		if err == nil {
+			if attempt > 0 {
+				t.logger.WithField("attempt", attempt + 1).Info("ABRP transmission succeeded after retry")
+			}
+			return nil
+		}
+		
+		lastErr = err
+		
+		// Log retry attempts
+		if attempt < t.maxRetries {
+			t.logger.WithFields(logrus.Fields{
+				"attempt": attempt + 1,
+				"error": err.Error(),
+			}).Debug("ABRP transmission attempt failed, will retry")
+		}
+	}
+	
+	return fmt.Errorf("ABRP transmission failed after %d attempts: %w", t.maxRetries + 1, lastErr)
+}
+
+// doTransmit performs the actual HTTP transmission
+func (t *ABRPTransmitter) doTransmit(data *sensors.SensorData) error {
 	// Convert sensor data to ABRP telemetry format
 	telemetry := t.buildTelemetryData(data)
 
@@ -135,23 +238,19 @@ func (t *ABRPTransmitter) Transmit(data *sensors.SensorData) error {
 
 	req.Header.Set("User-Agent", "byd-hass/1.0.0")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Connection", "close") // Force new connections to handle network switches
 
 	// Send request
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
-		atomic.StoreUint32(&t.healthy, 0)
 		return fmt.Errorf("failed to send ABRP request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		err := fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
-		atomic.StoreUint32(&t.healthy, 0)
-		return err
+		return fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
 	}
-
-	atomic.StoreUint32(&t.healthy, 1)
 
 	// Log the entire telemetry object for full visibility
 	logPayload, err := json.Marshal(telemetry)
@@ -331,10 +430,41 @@ func (t *ABRPTransmitter) SetTimeout(timeout time.Duration) {
 
 // GetConnectionStatus returns detailed connection status for diagnostics
 func (t *ABRPTransmitter) GetConnectionStatus() map[string]interface{} {
-	return map[string]interface{}{
-		"connected":   t.IsConnected(),
-		"api_key_set": t.apiKey != "",
-		"token_set":   t.token != "",
-		"timeout":     t.httpClient.Timeout,
+	failures := atomic.LoadUint32(&t.consecutiveFailures)
+	
+	status := map[string]interface{}{
+		"connected":              t.IsConnected(),
+		"api_key_set":           t.apiKey != "",
+		"token_set":             t.token != "",
+		"timeout":               t.httpClient.Timeout,
+		"consecutive_failures":  failures,
+		"max_retries":           t.maxRetries,
 	}
+	
+	if failures > 0 {
+		backoffDelay := time.Duration(math.Pow(2, float64(failures-1))) * t.baseBackoffDelay
+		if backoffDelay > t.maxBackoffDelay {
+			backoffDelay = t.maxBackoffDelay
+		}
+		
+		timeSinceFailure := time.Since(t.lastFailureTime)
+		remainingBackoff := backoffDelay - timeSinceFailure
+		if remainingBackoff < 0 {
+			remainingBackoff = 0
+		}
+		
+		status["last_failure_time"] = t.lastFailureTime
+		status["current_backoff_delay"] = backoffDelay
+		status["remaining_backoff"] = remainingBackoff
+		status["in_backoff"] = remainingBackoff > 0
+	}
+	
+	return status
+}
+
+// ResetFailureState manually resets the failure state (useful for testing or manual recovery)
+func (t *ABRPTransmitter) ResetFailureState() {
+	atomic.StoreUint32(&t.consecutiveFailures, 0)
+	atomic.StoreUint32(&t.healthy, 1)
+	t.logger.Info("ABRP transmitter failure state manually reset")
 }
