@@ -117,7 +117,12 @@ func (c *Client) Publish(topic string, payload []byte, retained bool) error {
 	qos := byte(1) // At least once delivery
 	token := c.client.Publish(topic, qos, retained, payload)
 
-	if token.Wait() && token.Error() != nil {
+	// Avoid potential deadlocks: wait for completion with a timeout instead of indefinitely.
+	const pubTimeout = 5 * time.Second
+	if !token.WaitTimeout(pubTimeout) {
+		return fmt.Errorf("publish to topic %s timed out after %s", topic, pubTimeout)
+	}
+	if token.Error() != nil {
 		return fmt.Errorf("failed to publish to topic %s: %w", topic, token.Error())
 	}
 
@@ -135,7 +140,12 @@ func (c *Client) Subscribe(topic string, handler mqtt.MessageHandler) error {
 	qos := byte(1)
 	token := c.client.Subscribe(topic, qos, handler)
 
-	if token.Wait() && token.Error() != nil {
+	// Prevent indefinite blocking on slow or lost connections.
+	const subTimeout = 5 * time.Second
+	if !token.WaitTimeout(subTimeout) {
+		return fmt.Errorf("subscribe to topic %s timed out after %s", topic, subTimeout)
+	}
+	if token.Error() != nil {
 		return fmt.Errorf("failed to subscribe to topic %s: %w", topic, token.Error())
 	}
 

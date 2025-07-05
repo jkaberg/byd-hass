@@ -173,8 +173,12 @@ func transmitToABRPAsync(ctx context.Context, tx *transmission.ABRPTransmitter, 
 	if tx == nil || data == nil {
 		return nil
 	}
-	// Pass the caller context down so that a global cancellation stops in-flight HTTP.
-	if err := tx.TransmitWithContext(ctx, data); err != nil {
+	// Bound the transmission time so that a prolonged network outage does not
+	// block the central scheduler indefinitely.
+	ctxTx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	if err := tx.TransmitWithContext(ctxTx, data); err != nil {
 		return fmt.Errorf("ABRP transmit failed: %w", err)
 	}
 	return nil

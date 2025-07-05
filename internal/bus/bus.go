@@ -41,8 +41,10 @@ func (b *Bus) Publish(s *sensors.SensorData) {
 		select {
 		case ch <- s:
 		default:
-			// Subscriber is too slow; drop it asynchronously
-			go b.dropSubscriber(ch)
+			// Subscriber is currently busy; skip this snapshot instead of dropping the
+			// subscriber entirely. The consumer will receive the next snapshot once
+			// it has processed the current one.
+			continue
 		}
 	}
 }
