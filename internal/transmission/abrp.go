@@ -114,67 +114,99 @@ func NewABRPTransmitter(apiKey, token string, logger *logrus.Logger) *ABRPTransm
 // TransmitWithContext sends sensor data to ABRP using the provided context.
 // If ctx is cancelled or times out, the request is aborted.
 func (t *ABRPTransmitter) TransmitWithContext(ctx context.Context, data *sensors.SensorData) error {
-	// Convert sensor data to ABRP telemetry format
+	// Convert sensor data to ABRP telemetry JSON once so we can reuse it between retries.
 	telemetry := t.buildTelemetryData(data)
 
-	// Marshal to JSON (compact, no whitespace)
 	payload, err := json.Marshal(telemetry)
 	if err != nil {
 		return fmt.Errorf("failed to marshal ABRP telemetry: %w", err)
 	}
 
-	// The API expects a urlencoded form post
-	form := url.Values{}
-	form.Add("tlm", string(payload))
-
+	// Prepare the constant request body and target URL up-front.
+	formEncoded := url.Values{"tlm": []string{string(payload)}}.Encode()
 	apiURL := fmt.Sprintf("https://api.iternio.com/1/tlm/send?api_key=%s&token=%s", t.apiKey, t.token)
 
-	// Create HTTP request bound to ctx (no compression)
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return fmt.Errorf("failed to create ABRP request: %w", err)
-	}
+	// Retry parameters. We use exponential back-off capped at 30 seconds and keep retrying
+	// until the provided context is cancelled.
+	const (
+		initialBackoff = 2 * time.Second
+		maxBackoff     = 30 * time.Second
+	)
 
-	req.Header.Set("User-Agent", "byd-hass/1.0.0")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	backoff := initialBackoff
+	attempt := 0
+	var lastErr error
 
-	// Send request
-	resp, err := t.httpClient.Do(req)
-	if err != nil {
+	for {
+		// Honour caller cancellation.
+		select {
+		case <-ctx.Done():
+			if lastErr == nil {
+				lastErr = ctx.Err()
+			}
+			return lastErr
+		default:
+		}
+
+		attempt++
+
+		// Build a fresh *http.Request for every attempt because the request body reader
+		// cannot be reused once it has been read.
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(formEncoded))
+		if err != nil {
+			return fmt.Errorf("failed to create ABRP request: %w", err)
+		}
+		req.Header.Set("User-Agent", "byd-hass/1.0.0")
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		resp, err := t.httpClient.Do(req)
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			atomic.StoreUint32(&t.healthy, 1)
+
+			// Debug logging of successful transmission.
+			if t.logger.IsLevelEnabled(logrus.DebugLevel) {
+				t.logger.WithFields(logrus.Fields{
+					"attempt":     attempt,
+					"status_code": resp.StatusCode,
+				}).Debug("Successfully transmitted to ABRP")
+			}
+			return nil
+		}
+
+		// Handle failure path – we want to retry.
+		if resp != nil {
+			_ = resp.Body.Close()
+			err = fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
+		}
+		lastErr = err
 		atomic.StoreUint32(&t.healthy, 0)
-		// Close idle connections to drop any possibly half-open sockets after
-		// network hand-over (Wi-Fi ↔ LTE).
+
+		// Drop idle connections to avoid half-open sockets after network hand-over.
 		if tr, ok := t.httpClient.Transport.(*http.Transport); ok {
 			tr.CloseIdleConnections()
 		}
-		return fmt.Errorf("failed to send ABRP request: %w", err)
-	}
-	defer resp.Body.Close()
 
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		atomic.StoreUint32(&t.healthy, 0)
-		if tr, ok := t.httpClient.Transport.(*http.Transport); ok {
-			tr.CloseIdleConnections()
+		t.logger.WithError(err).Warnf("ABRP transmit attempt %d failed – retrying in %s", attempt, backoff)
+
+		// Wait for the back-off period or exit early if the caller cancels.
+		select {
+		case <-ctx.Done():
+			if lastErr == nil {
+				lastErr = ctx.Err()
+			}
+			return lastErr
+		case <-time.After(backoff):
 		}
-		return fmt.Errorf("ABRP API returned status %d: %s", resp.StatusCode, resp.Status)
-	}
 
-	atomic.StoreUint32(&t.healthy, 1)
-
-	// Log the entire telemetry object for full visibility (debug level)
-	if t.logger.IsLevelEnabled(logrus.DebugLevel) {
-		if logPayload, err := json.Marshal(telemetry); err == nil {
-			t.logger.WithFields(logrus.Fields{
-				"status_code": resp.StatusCode,
-				"payload":     string(logPayload),
-			}).Debug("Successfully transmitted to ABRP")
-		} else {
-			t.logger.WithError(err).Warn("Failed to marshal telemetry for logging")
+		// Exponential back-off with an upper bound.
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
 		}
 	}
-
-	return nil
 }
 
 // Transmit is kept for backward-compatibility and uses Background context.
