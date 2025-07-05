@@ -164,10 +164,11 @@ func (t *ABRPTransmitter) TransmitWithContext(ctx context.Context, data *sensors
 			if resp.Body != nil {
 				_ = resp.Body.Close()
 			}
-			atomic.StoreUint32(&t.healthy, 1)
+			prev := atomic.SwapUint32(&t.healthy, 1)
 
-			// Debug logging of successful transmission.
-			if t.logger.IsLevelEnabled(logrus.DebugLevel) {
+			if prev == 0 {
+				t.logger.Info("ABRP connection restored")
+			} else if t.logger.IsLevelEnabled(logrus.DebugLevel) {
 				t.logger.WithFields(logrus.Fields{
 					"attempt":     attempt,
 					"status_code": resp.StatusCode,
@@ -189,7 +190,13 @@ func (t *ABRPTransmitter) TransmitWithContext(ctx context.Context, data *sensors
 			tr.CloseIdleConnections()
 		}
 
-		t.logger.WithError(err).Warnf("ABRP transmit attempt %d failed – retrying in %s", attempt, backoff)
+		if attempt == 1 {
+			// Surface the initial failure at WARN so operators know we are offline.
+			// Detailed retry counters/back-off remain at DEBUG level to keep INFO/WARN output concise.
+			t.logger.WithError(err).Warn("ABRP transmit failed – retrying")
+		} else {
+			t.logger.WithError(err).Debugf("ABRP retry %d failed – next attempt in %s", attempt, backoff)
+		}
 
 		// Wait for the back-off period or exit early if the caller cancels.
 		select {

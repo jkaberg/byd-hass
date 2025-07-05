@@ -81,7 +81,7 @@ func (p *TermuxLocationProvider) GetLocation() (*LocationData, error) {
 
 // backgroundLocationFetcher runs in a separate goroutine to fetch location data
 func (p *TermuxLocationProvider) backgroundLocationFetcher() {
-	p.logger.Info("Started background location fetcher")
+	p.logger.Debug("Location fetcher started")
 
 	// Initial fetch
 	p.fetchLocationData()
@@ -93,7 +93,7 @@ func (p *TermuxLocationProvider) backgroundLocationFetcher() {
 	for {
 		select {
 		case <-p.ctx.Done():
-			p.logger.Info("Background location fetcher stopped")
+			p.logger.Debug("Location fetcher stopped")
 			return
 		case <-ticker.C:
 			p.fetchLocationData()
@@ -246,7 +246,7 @@ func (p *TermuxLocationProvider) GetLastFetchTime() time.Time {
 
 // Stop gracefully stops the background location fetcher
 func (p *TermuxLocationProvider) Stop() {
-	p.logger.Info("Stopping location provider...")
+	p.logger.Debug("Stopping location provider")
 	p.cancel()
 }
 

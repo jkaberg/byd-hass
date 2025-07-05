@@ -87,8 +87,14 @@ func NewClient(mqttURL, deviceID string, logger *logrus.Logger) (*Client, error)
 		logger.Debug("MQTT reconnecting...")
 	})
 
+	firstConnect := true
 	opts.SetOnConnectHandler(func(client mqtt.Client) {
-		logger.Info("MQTT connected successfully")
+		if firstConnect {
+			logger.Debug("MQTT connected")
+			firstConnect = false
+		} else {
+			logger.Info("MQTT reconnected")
+		}
 	})
 
 	// Create client
