@@ -2,7 +2,6 @@ package sensors
 
 import (
 	"time"
-
 	"github.com/jkaberg/byd-hass/internal/location"
 )
 
@@ -26,6 +25,7 @@ type SensorData struct {
 	FrontMotorRPM         *float64 `json:"front_motor_rpm,omitempty"`
 	FrontMotorTorque      *float64 `json:"front_motor_torque,omitempty"`
 	RearMotorRPM          *float64 `json:"rear_motor_rpm,omitempty"`
+	FuelPercentage        *float64 `json:"fuel_percentage,omitempty"`
 	BatteryPercentage     *float64 `json:"battery_percentage,omitempty"`
 	BatteryCapacity       *float64 `json:"battery_capacity,omitempty"`
 	ChargingStatus        *float64 `json:"charging_status,omitempty"`
@@ -221,7 +221,7 @@ var AllSensors = []SensorDefinition{
 	{31, "SteeringWheelSpeed", "方向盘转速", "Steering Sheel Speed", "sensor", "safety", "°/s", 1},
 	{32, "TotalPowerConsumption", "总电耗", "Total Power Consumption", "sensor", "safety", "kWh", 1},
 	{33, "BatteryPercentage", "电量百分比", "Battery Percentage", "sensor", "battery", "%", 1},
-	{34, "FuelPercentage", "油量百分比", "Fuel Ppercentage", "sensor", "timestamp", "%", 1},
+	{34, "FuelPercentage", "油量百分比", "Fuel Percentage", "sensor", "battery", "%", 1},
 	{35, "TotalFuelConsumption", "总燃油消耗", "Total Fuel Consumption", "sensor", "timestamp", "L", 1},
 	{36, "LaneLineCurvature", "车道线曲率", "Lane Line Curvature", "sensor", "timestamp", "", 1},
 	{37, "RightLaneDistance", "右侧线距离", "Right Lane Distance", "sensor", "timestamp", "", 1},

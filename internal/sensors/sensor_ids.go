@@ -1,5 +1,11 @@
 package sensors
 
+import (
+    "os"
+    "strings"
+    "strconv"
+)
+
 // MonitoredSensor represents a sensor that we (a) poll from Diplus and (b)
 // may expose to downstream integrations such as MQTT / ABRP / REST.
 //
@@ -13,7 +19,10 @@ package sensors
 //
 // To add a new sensor:
 //   1. Make sure it exists in sensors.AllSensors with a unique ID.
-//   2. Append its ID below, choosing Publish=true/false.
+//   2. Append its ID to "BYD_HASS_SENSOR_IDS" env, choosing Publish=true/false
+//      in such manner: "ID:publish" for example "33:0,34:1", this will publish
+//      id 34, and read but not publish id 33, you can omit ":1" as publish is 
+//      the default, so you can write use "33,34:1" with the same effect
 //   3. No other lists need editing.
 
 type MonitoredSensor struct {
@@ -24,21 +33,74 @@ type MonitoredSensor struct {
 // MonitoredSensors enumerates the subset of sensors our app currently cares
 // about.  Keep this list tidy; polling *all* 100-ish sensors every 15 seconds
 // would waste bandwidth and CPU on the head-unit.
-var MonitoredSensors = []MonitoredSensor{
-	{ID: 33, Publish: true}, // BatteryPercentage – HA battery, location attr
-	{ID: 2, Publish: true},  // Speed             – HA + device_tracker state
-	{ID: 3, Publish: true},  // Mileage           – HA odometer
-	{ID: 53, Publish: true}, // LeftFrontTirePressure
-	{ID: 54, Publish: true}, // RightFrontTirePressure
-	{ID: 55, Publish: true}, // LeftRearTirePressure
-	{ID: 56, Publish: true}, // RightRearTirePressure
-	{ID: 10, Publish: true}, // EnginePower       – power gauge
-	{ID: 26, Publish: true}, // OutsideTemperature – ambient temp
-	{ID: 25, Publish: true}, // CabinTemperature  – cabin temp
+// loadMonitoredSensorsFromEnv overrides the default MonitoredSensors
 
-	// Internal-only helpers (not published)
-	{ID: 12, Publish: false}, // ChargeGunState – used for virtual charging_status
+// Default monitors
+var defaultMonitoredSensors = []MonitoredSensor{
+	{ID: 33, Publish: true}, // BatteryPercentage
+	{ID: 34, Publish: true}, // FuelPercentage
+	{ID: 2, Publish: true},  // Speed
+	{ID: 3, Publish: true},  // Mileage
+	{ID: 53, Publish: true}, // LF tire
+	{ID: 54, Publish: true}, // RF tire
+	{ID: 55, Publish: true}, // LR tire
+	{ID: 56, Publish: true}, // RR tire
+	{ID: 10, Publish: true}, // EnginePower
+	{ID: 26, Publish: true}, // OutsideTemp
+	{ID: 25, Publish: true}, // CabinTemp
 
+	// Internal-only
+	{ID: 12, Publish: false},
+}
+
+// Global value initialized at startup
+var MonitoredSensors = loadMonitoredSensorsFromEnv()
+
+// ---------------------------------------------------------
+
+func loadMonitoredSensorsFromEnv() []MonitoredSensor {
+	raw := os.Getenv("BYD_HASS_SENSOR_IDS")
+	if raw == "" {
+		return defaultMonitoredSensors
+	}
+
+	parts := strings.Split(raw, ",")
+	sensorsList := make([]MonitoredSensor, 0, len(parts))
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+
+		publish := true
+
+		// Format supports: "33" or "12:0" or "53:1"
+		idStr := p
+		if strings.Contains(p, ":") {
+			pieces := strings.SplitN(p, ":", 2)
+			idStr = pieces[0]
+			if pieces[1] == "0" {
+				publish = false
+			}
+		}
+
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			continue
+		}
+
+		sensorsList = append(sensorsList, MonitoredSensor{
+			ID:	  id,
+			Publish: publish,
+		})
+	}
+
+	if len(sensorsList) == 0 {
+		return defaultMonitoredSensors
+	}
+
+	return sensorsList
 }
 
 // PollSensorIDs returns every sensor ID we must include in the Diplus API

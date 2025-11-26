@@ -33,7 +33,9 @@ INTERNAL_LOG_FILE="$INSTALL_DIR/starter.log"
 # Termux:Boot script (The starter that keeps the external guardian alive)
 BOOT_DIR="$HOME/.termux/boot"
 BOOT_SCRIPT_NAME="byd-hass-starter.sh"
+BOOT_GPS_SCRIPT_NAME="byd-hass-gpsdata.sh"
 BOOT_SCRIPT_PATH="$BOOT_DIR/$BOOT_SCRIPT_NAME"
+BOOT_GPS_SCRIPT_PATH="$BOOT_DIR/$BOOT_SCRIPT_NAME"
 
 # External guardian (runs under Android's 'sh')
 ADB_KEEPALIVE_SCRIPT_NAME="keep-alive.sh"
@@ -114,7 +116,7 @@ fi
 # 1. Setup Termux Environment
 echo -e "\n${BLUE}1. Setting up Termux environment...${NC}"
 echo "Installing dependencies (adb, curl, jq, termux-api)..."
-pkg install -y android-tools curl jq >/dev/null 2>&1
+pkg install -y android-tools curl jq termux-api bc >/dev/null 2>&1
 echo "✅ Environment ready."
 
 # 2. Explain Manual Steps
@@ -324,6 +326,103 @@ while true; do
     sleep 60
 done
 BOOT_EOF
+cat > "$BOOT_GPS_SCRIPT_PATH" << BOOT_GPS_EOF
+#!/data/data/com.termux/files/usr/bin/bash
+
+# --- CONFIG -----------------------------------------------------
+
+INTERVAL=12  # seconds
+
+# Previous values (empty on first run)
+OLD_LAT=""
+OLD_LON=""
+
+# Trim function: keep 6 decimal digits
+trim() {
+        printf "%.6f" "$1"
+}
+
+trim_acc() {
+        printf "%.2f" "$1"
+}
+
+to_decimal() {
+        printf "%f" "$1"
+}
+
+# --- LOOP -------------------------------------------------------
+while true; do
+
+        # Request GPS fix
+        LOC=$(termux-location)
+
+        # If termux-location failed, wait and retry
+        if [ -z "$LOC" ]; then
+                sleep $INTERVAL
+                continue
+        fi
+
+        # Extract raw values
+        RAW_LAT=$(echo "$LOC" | jq -r .latitude)
+        RAW_LON=$(echo "$LOC" | jq -r .longitude)
+        SPD=$(echo "$LOC" | jq -r .speed)
+        RAW_ACC=$(echo "$LOC" | jq -r .accuracy)
+
+        # Trim coordinates
+        LAT=$(trim "$RAW_LAT")
+        LON=$(trim "$RAW_LON")
+        ACC=$(trim_acc "$RAW_ACC")
+
+        # -------------------------
+        # CHANGE DETECTION SECTION
+        # -------------------------
+
+        if [ -n "$OLD_LAT" ] && [ -n "$OLD_LON" ]; then
+
+                # Compute difference
+                DIFF_LAT=$(awk -v a="$LAT" -v b="$OLD_LAT" 'BEGIN{print (a-b)}')
+                DIFF_LON=$(awk -v a="$LON" -v b="$OLD_LON" 'BEGIN{print (a-b)}')
+
+                # Absolute values
+                ABS_LAT=$(awk -v x="$DIFF_LAT" 'BEGIN {print (x<0?-x:x)}')
+                ABS_LON=$(awk -v x="$DIFF_LON" 'BEGIN {print (x<0?-x:x)}')
+
+                # Only publish if moved >0.00001° (~1 m)
+                ABS_LAT_DEC=$(to_decimal "$ABS_LAT")
+                ABS_LON_DEC=$(to_decimal "$ABS_LON")
+
+                if (( $(echo "$ABS_LAT_DEC < 0.00001" | bc -l) )) && \
+                   (( $(echo "$ABS_LON_DEC < 0.00001" | bc -l) )); then
+                        # No significant change → skip publish
+                        sleep $INTERVAL
+                        continue
+                fi
+        fi
+
+        # Update previous values
+        OLD_LAT="$LAT"
+        OLD_LON="$LON"
+
+        # -------------------------
+        # JSON PAYLOAD
+        # -------------------------
+
+        JSON_PAYLOAD=$(jq -n -c \
+                --arg lat "$LAT" \
+                --arg lon "$LON" \
+                --arg spd "$SPD" \
+                --arg acc "$ACC" \
+                '{
+                        latitude: ($lat|tonumber),
+                        longitude: ($lon|tonumber),
+                        speed: ($spd|tonumber),
+                        accuracy: ($acc|tonumber)
+                }')
+
+        echo "$JSON_PAYLOAD" > /storage/emulated/0/bydhass/gps
+        sleep $INTERVAL
+done
+BOOT_GPS_EOF
 chmod +x "$BOOT_SCRIPT_PATH"
 echo "✅ Termux:Boot orchestrator script created."
 
