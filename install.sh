@@ -35,7 +35,7 @@ BOOT_DIR="$HOME/.termux/boot"
 BOOT_SCRIPT_NAME="byd-hass-starter.sh"
 BOOT_GPS_SCRIPT_NAME="byd-hass-gpsdata.sh"
 BOOT_SCRIPT_PATH="$BOOT_DIR/$BOOT_SCRIPT_NAME"
-BOOT_GPS_SCRIPT_PATH="$BOOT_DIR/$BOOT_SCRIPT_NAME"
+BOOT_GPS_SCRIPT_PATH="$BOOT_DIR/$BOOT_GPS_SCRIPT_NAME"
 
 # External guardian (runs under Android's 'sh')
 ADB_KEEPALIVE_SCRIPT_NAME="keep-alive.sh"
@@ -424,6 +424,7 @@ while true; do
 done
 BOOT_GPS_EOF
 chmod +x "$BOOT_SCRIPT_PATH"
+chmod +x "$BOOT_GPS_SCRIPT_PATH"
 echo "✅ Termux:Boot orchestrator script created."
 
 # 10b. Ensure .bashrc autostart entry
