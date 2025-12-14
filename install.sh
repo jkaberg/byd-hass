@@ -326,7 +326,7 @@ while true; do
     sleep 60
 done
 BOOT_EOF
-cat > "$BOOT_GPS_SCRIPT_PATH" << BOOT_GPS_EOF
+cat > "$BOOT_GPS_SCRIPT_PATH" << 'BOOT_GPS_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 
 # --- CONFIG -----------------------------------------------------
