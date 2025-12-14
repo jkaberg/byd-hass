@@ -245,6 +245,32 @@ echo -e "\n${BLUE}3c. Opening 'Deactive background start' app, uncheck Diplus, T
 adb -s "$ADB_SERVER" shell "am start -n com.byd.appstartmanagement/.frame.AppStartManagement" >/dev/null 2>&1 || true
 read -p "Press [Enter] to continue once you have completed these steps..." || true
 
+# 3d. BYD Traffic Monitor (optional toggle)
+echo -e "\n${BLUE}3d. BYD Traffic Monitor${NC}"
+TRAFFIC_MONITOR_PKG="com.byd.trafficmonitor"
+TRAFFIC_STATE=$(adbs "pm list packages -d" 2>/dev/null | grep -c "$TRAFFIC_MONITOR_PKG" || echo "0")
+
+if [ "$TRAFFIC_STATE" -gt 0 ]; then
+  echo "   Status: ${RED}disabled${NC}"
+  read -p "   - Do you want to re-enable the BYD Traffic Monitor? (y/N): " ENABLE_TRAFFIC || true
+  if [ "${ENABLE_TRAFFIC,,}" == "y" ]; then
+    adbs "pm enable $TRAFFIC_MONITOR_PKG" 2>/dev/null || true
+    echo "   ✅ BYD Traffic Monitor enabled"
+  else
+    echo "   Keeping disabled."
+  fi
+else
+  echo "   Status: ${GREEN}enabled${NC}"
+  echo -e "   ${YELLOW}Disabling allows byd-hass to keep running when the car is turned off.${NC}"
+  read -p "   - Do you want to disable the BYD Traffic Monitor? (y/N): " DISABLE_TRAFFIC || true
+  if [ "${DISABLE_TRAFFIC,,}" == "y" ]; then
+    adbs "pm disable-user --user 0 $TRAFFIC_MONITOR_PKG" 2>/dev/null || true
+    echo "   ✅ BYD Traffic Monitor disabled"
+  else
+    echo "   Keeping enabled."
+  fi
+fi
+
 # 4. Create Directories
 echo -e "\n${BLUE}4. Creating necessary directories...${NC}"
 # Local directories for logs
