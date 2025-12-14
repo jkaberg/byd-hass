@@ -87,7 +87,9 @@ cleanup_all_processes() {
   # Kill Termux-side processes
   echo "Stopping Termux-side processes..."
   pkill -f "$BOOT_SCRIPT_NAME" 2>/dev/null || true
+  pkill -f "$BOOT_GPS_SCRIPT_NAME" 2>/dev/null || true
   pkill -f "byd-hass-starter.sh" 2>/dev/null || true
+  pkill -f "byd-hass-gpsdata.sh" 2>/dev/null || true
   pkill -f "$BINARY_NAME" 2>/dev/null || true
   pkill -f "byd-hass" 2>/dev/null || true
   
@@ -96,8 +98,8 @@ cleanup_all_processes() {
   
   # Double-check and force kill any stubborn processes
   echo "Performing final cleanup..."
-  adbs "ps | grep -E '(keep-alive|byd-hass)' | grep -v grep | awk '{print \$2}' | xargs -r kill -9" 2>/dev/null || true
-  ps aux | grep -E '(byd-hass|keep-alive)' | grep -v grep | awk '{print $2}' | xargs -r kill -9 2>/dev/null || true
+  adbs "ps | grep -E '(keep-alive|byd-hass|gpsdata)' | grep -v grep | awk '{print \$2}' | xargs -r kill -9" 2>/dev/null || true
+  ps aux | grep -E '(byd-hass|keep-alive|gpsdata)' | grep -v grep | awk '{print $2}' | xargs -r kill -9 2>/dev/null || true
   
   echo "✅ All processes terminated."
 }
@@ -326,6 +328,11 @@ while true; do
     sleep 60
 done
 BOOT_EOF
+chmod +x "$BOOT_SCRIPT_PATH"
+echo "✅ Termux:Boot orchestrator script created."
+
+# 10a. Create Termux:Boot GPS Script
+echo -e "\n${BLUE}10a. Creating Termux:Boot GPS script...${NC}"
 cat > "$BOOT_GPS_SCRIPT_PATH" << 'BOOT_GPS_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 
@@ -423,34 +430,43 @@ while true; do
         sleep $INTERVAL
 done
 BOOT_GPS_EOF
-chmod +x "$BOOT_SCRIPT_PATH"
 chmod +x "$BOOT_GPS_SCRIPT_PATH"
-echo "✅ Termux:Boot orchestrator script created."
+echo "✅ Termux:Boot GPS script created."
 
-# 10b. Ensure .bashrc autostart entry
+# 10b. Ensure .bashrc autostart entries
 BASHRC_PATH="$HOME/.bashrc"
 AUTOSTART_CMD="$BOOT_SCRIPT_PATH &"
+AUTOSTART_GPS_CMD="$BOOT_GPS_SCRIPT_PATH &"
 
-echo -e "\n${BLUE}10b. Ensuring .bashrc autostart entry...${NC}"
+echo -e "\n${BLUE}10b. Ensuring .bashrc autostart entries...${NC}"
 # Create .bashrc if it does not exist
 if [ ! -f "$BASHRC_PATH" ]; then
   touch "$BASHRC_PATH"
   echo "Created $BASHRC_PATH"
 fi
-# Add autostart command if not already present
+# Add orchestrator autostart if not already present
 if grep -Fxq "$AUTOSTART_CMD" "$BASHRC_PATH"; then
-  echo "✅ Autostart entry already present in .bashrc."
+  echo "✅ Orchestrator autostart entry already present."
 else
   echo "$AUTOSTART_CMD" >> "$BASHRC_PATH"
-  echo "✅ Added autostart entry to .bashrc."
+  echo "✅ Added orchestrator autostart entry."
+fi
+# Add GPS autostart if not already present
+if grep -Fxq "$AUTOSTART_GPS_CMD" "$BASHRC_PATH"; then
+  echo "✅ GPS autostart entry already present."
+else
+  echo "$AUTOSTART_GPS_CMD" >> "$BASHRC_PATH"
+  echo "✅ Added GPS autostart entry."
 fi
 
-# 11. Start the main orchestrator script
-echo -e "\n${BLUE}11. Starting the main service orchestrator...${NC}"
+# 11. Start the services
+echo -e "\n${BLUE}11. Starting the services...${NC}"
 nohup sh "$BOOT_SCRIPT_PATH" > /dev/null 2>&1 &
 ORCHESTRATOR_PID=$!
+nohup sh "$BOOT_GPS_SCRIPT_PATH" > /dev/null 2>&1 &
+GPS_PID=$!
 
-# Wait a moment and verify the orchestrator started
+# Wait a moment and verify the services started
 sleep 2
 if kill -0 "$ORCHESTRATOR_PID" 2>/dev/null; then
     echo "✅ Orchestrator started successfully (PID: $ORCHESTRATOR_PID)"
@@ -458,6 +474,11 @@ if kill -0 "$ORCHESTRATOR_PID" 2>/dev/null; then
     echo "   → The keep-alive script will start the BYD-HASS binary"
 else
     echo "⚠️  Orchestrator may have failed to start. Check logs: tail -f $INTERNAL_LOG_FILE"
+fi
+if kill -0 "$GPS_PID" 2>/dev/null; then
+    echo "✅ GPS script started successfully (PID: $GPS_PID)"
+else
+    echo "⚠️  GPS script may have failed to start."
 fi
 
 echo -e "\n${GREEN}🎉 Installation complete! BYD-HASS is now managed by a self-healing service.${NC}"
