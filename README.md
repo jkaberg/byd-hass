@@ -12,28 +12,49 @@ BYD-HASS is a small Go program that turns data from the Diplus API into MQTT mes
 
 ## Quick start
 
-From the infotainment with Termux and the other requirements (see below) run the installer:
+### Prerequisites
+
+1. **Enable Wireless Debugging** on the car's infotainment
+
+2. **Install Termux** from [F-Droid](https://f-droid.org/packages/com.termux/) or [GitHub](https://github.com/termux/termux-app/releases)
+
+3. **Have an MQTT broker ready** – normally the one already used by Home Assistant (tip: if you're gonna use this while traveling, consider [MQTT over WebSocket](https://cedalo.com/blog/enabling-websockets-over-mqtt-with-mosquitto/))
+
+### Run the installer
+
+Open Termux and run:
 
 ```bash
 bash <(curl -sSL https://raw.githubusercontent.com/jkaberg/byd-hass/main/install.sh)
 ```
 
-The installer downloads the binary, asks for basic settings, and configures the program to start automatically and keeps running indefinitely.
+The installer will:
+- Download and install the `byd-hass` binary
+- Check for and offer to install missing dependencies (Diplus, Termux:API, Termux:Boot)
+- Ask for your MQTT and ABRP settings
+- Configure the program to start automatically and keep running indefinitely
 
-Requirements:
-- ADB over wireless enabled in the car
-- [Diplus app](http://lanye.pw/di/) running and reachable on `localhost:8988`
-- [Termux](https://termux.com/) plus the [Termux:Boot](https://github.com/termux/termux-boot) add-on so the program can start automatically
-- [ABRP Android app](https://play.google.com/store/apps/details?id=com.iternio.abrpapp) running in the background (only required if you enable ABRP telemetry or leave `-require-abrp-app` at its default `true`)
-- An MQTT broker – normally the one already used by Home Assistant (tip: if you're gonna use this while traveling, consider [MQTT over Websocket](https://cedalo.com/blog/enabling-websockets-over-mqtt-with-mosquitto/))
+### Optional: ABRP telemetry
 
-**There are various ways to set this up, for now I wont provide an how-to on setup of these tools and it's up to you to figure it out.**
+If you want to send telemetry to A Better Route Planner, you'll also need:
+- [ABRP Android app](https://play.google.com/store/apps/details?id=com.iternio.abrpapp) running in the background (can be disabled with `-require-abrp-app=false`)
+- Your ABRP API key and user token (provided during installation)
 
 ---
 
-### Installer script
+### Updating and maintenance
 
-The same `install.sh` script can be run again later to update the binary or to stop the service if you need to change the configuration.
+Re-run the installer at any time to update to the latest version:
+
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/jkaberg/byd-hass/main/install.sh)
+```
+
+To stop all running processes (useful before reconfiguring):
+
+```bash
+./install.sh cleanup
+```
 
 ## Configuration
 

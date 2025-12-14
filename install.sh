@@ -50,8 +50,17 @@ REPO="jkaberg/byd-hass"
 ASSET_NAME="byd-hass-arm64"
 RELEASES_API="https://api.github.com/repos/$REPO/releases/latest"
 
+# Dependency apps (package name, download URL)
+DIPLUS_PKG="com.van.diplus"
+DIPLUS_URL="http://jt.x2x.fun:852/Update/Apk/diplus.1.3.7.apk"
+TERMUX_API_PKG="com.termux.api"
+TERMUX_API_RELEASES="https://api.github.com/repos/termux/termux-api/releases/latest"
+TERMUX_BOOT_PKG="com.termux.boot"
+TERMUX_BOOT_RELEASES="https://api.github.com/repos/termux/termux-boot/releases/latest"
+
 # Local temporary download path
 TEMP_BINARY_PATH="/data/data/com.termux/files/usr/tmp/$BINARY_NAME"
+TEMP_APK_PATH="/data/data/com.termux/files/usr/tmp"
 
 # Colors
 RED='\033[0;31m'
@@ -69,6 +78,35 @@ adbs() {
   fi
   # Execute the requested command in the device shell
   adb -s "$ADB_SERVER" shell "$@"
+}
+
+# Helper function: check if an app is installed
+is_app_installed() {
+  local pkg="$1"
+  adbs "pm list packages" 2>/dev/null | grep -q "package:$pkg"
+}
+
+# Helper function: install APK via ADB
+install_apk() {
+  local apk_path="$1"
+  local pkg_name="$2"
+  echo "   Installing $pkg_name..."
+  if adb -s "$ADB_SERVER" install -r "$apk_path" 2>&1 | grep -q "Success"; then
+    echo "   ✅ $pkg_name installed successfully."
+    return 0
+  else
+    echo "   ❌ Failed to install $pkg_name."
+    return 1
+  fi
+}
+
+# Helper function: get latest APK URL from GitHub releases
+get_github_apk_url() {
+  local releases_api="$1"
+  local release_info
+  release_info=$(curl -s "$releases_api")
+  # Look for APK asset (prefer universal or arm64)
+  echo "$release_info" | jq -r '.assets[] | select(.name | test("\\.apk$")) | .browser_download_url' | head -1
 }
 
 # Comprehensive cleanup function
@@ -123,10 +161,8 @@ echo "✅ Environment ready."
 
 # 2. Explain Manual Steps
 echo -e "\n${BLUE}2. Important Manual Steps Required:${NC}"
-echo -e "${YELLOW}   - You must install the Diplus and Termux:Boot apps from Github (see README.md),${NC}"
-echo -e "${YELLOW}   - and make sure you configured the apps according to the app instructions.${NC}"
 echo -e "${YELLOW}   - You must enable 'Wireless debugging' in Android Developer Options.${NC}"
-read -p "Press [Enter] to continue once you have completed these steps..."
+read -p "Press [Enter] to continue once you have completed this step..."
 
 # 3a. Connect ADB to self
 echo -e "\n${BLUE}3a. Connecting ADB to localhost (make sure to Accept and remember the connection)...${NC}"
@@ -137,8 +173,75 @@ else
   exit 1
 fi
 
-# 3b. Enable background start for Termux, Termux:Boot and Termux:API
-echo -e "\n${BLUE}3b. Opening 'Deactive background start' app, uncheck Diplus, Termux, Termux:Boot and Termux:API and hit OK...${NC}"
+# 3b. Check and install dependencies
+echo -e "\n${BLUE}3b. Checking required apps...${NC}"
+
+MISSING_APPS=""
+if ! is_app_installed "$DIPLUS_PKG"; then
+  MISSING_APPS="$MISSING_APPS Diplus"
+  echo "   ⚠️  Diplus not installed"
+else
+  echo "   ✅ Diplus installed"
+fi
+if ! is_app_installed "$TERMUX_API_PKG"; then
+  MISSING_APPS="$MISSING_APPS Termux:API"
+  echo "   ⚠️  Termux:API not installed"
+else
+  echo "   ✅ Termux:API installed"
+fi
+if ! is_app_installed "$TERMUX_BOOT_PKG"; then
+  MISSING_APPS="$MISSING_APPS Termux:Boot"
+  echo "   ⚠️  Termux:Boot not installed"
+else
+  echo "   ✅ Termux:Boot installed"
+fi
+
+if [ -n "$MISSING_APPS" ]; then
+  echo -e "\n${YELLOW}Missing apps:$MISSING_APPS${NC}"
+  read -p "   - Do you want to install missing apps now? (Y/n): " INSTALL_DEPS || true
+  if [ "${INSTALL_DEPS,,}" != "n" ]; then
+    # Install Diplus if missing
+    if ! is_app_installed "$DIPLUS_PKG"; then
+      echo "   Downloading Diplus..."
+      curl -sL -o "$TEMP_APK_PATH/diplus.apk" "$DIPLUS_URL"
+      install_apk "$TEMP_APK_PATH/diplus.apk" "Diplus"
+      rm -f "$TEMP_APK_PATH/diplus.apk"
+    fi
+    
+    # Install Termux:API if missing
+    if ! is_app_installed "$TERMUX_API_PKG"; then
+      echo "   Downloading Termux:API..."
+      TERMUX_API_URL=$(get_github_apk_url "$TERMUX_API_RELEASES")
+      if [ -n "$TERMUX_API_URL" ] && [ "$TERMUX_API_URL" != "null" ]; then
+        curl -sL -o "$TEMP_APK_PATH/termux-api.apk" "$TERMUX_API_URL"
+        install_apk "$TEMP_APK_PATH/termux-api.apk" "Termux:API"
+        rm -f "$TEMP_APK_PATH/termux-api.apk"
+      else
+        echo "   ❌ Could not find Termux:API APK download URL"
+      fi
+    fi
+    
+    # Install Termux:Boot if missing
+    if ! is_app_installed "$TERMUX_BOOT_PKG"; then
+      echo "   Downloading Termux:Boot..."
+      TERMUX_BOOT_URL=$(get_github_apk_url "$TERMUX_BOOT_RELEASES")
+      if [ -n "$TERMUX_BOOT_URL" ] && [ "$TERMUX_BOOT_URL" != "null" ]; then
+        curl -sL -o "$TEMP_APK_PATH/termux-boot.apk" "$TERMUX_BOOT_URL"
+        install_apk "$TEMP_APK_PATH/termux-boot.apk" "Termux:Boot"
+        rm -f "$TEMP_APK_PATH/termux-boot.apk"
+      else
+        echo "   ❌ Could not find Termux:Boot APK download URL"
+      fi
+    fi
+  else
+    echo -e "${YELLOW}   Skipping app installation. Please install manually before continuing.${NC}"
+  fi
+else
+  echo "   ✅ All required apps are installed"
+fi
+
+# 3c. Enable background start for Termux, Termux:Boot and Termux:API
+echo -e "\n${BLUE}3c. Opening 'Deactive background start' app, uncheck Diplus, Termux, Termux:Boot and Termux:API and hit OK...${NC}"
 adb -s "$ADB_SERVER" shell "am start -n com.byd.appstartmanagement/.frame.AppStartManagement" >/dev/null 2>&1 || true
 read -p "Press [Enter] to continue once you have completed these steps..." || true
 
