@@ -34,6 +34,8 @@ The installer will:
 - Ask for your MQTT and ABRP settings
 - Configure the program to start automatically and keep running indefinitely
 
+**Note:** After installation, make sure to grant the required permissions to Diplus, Termux, Termux:Boot, and Termux:API (especially location permissions for GPS functionality).
+
 ### Optional: ABRP telemetry
 
 If you want to send telemetry to A Better Route Planner, you'll also need:
