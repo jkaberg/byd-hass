@@ -73,7 +73,7 @@ Settings can be supplied as command-line flags or environment variables (prefix 
 | `-discovery-prefix`    | ―                            | MQTT discovery prefix (default `homeassistant`) |
 | `-mqtt-interval`       | `BYD_HASS_MQTT_INTERVAL`      | Override MQTT transmission interval (`60s` default) |
 | `-abrp-interval`       | `BYD_HASS_ABRP_INTERVAL`      | Override ABRP transmission interval (`10s` default) |
-|                        | `BYD_HASS_SENSOR_IDS`        | Override default sensors published, use format "id:publish,id,...", publish can be ommited, default to true, for example "33:1,34,1:0" meaning publish id's 33 and 34, but also read id 1 and don't publish  |
+|                        | `BYD_HASS_SENSOR_IDS`        | Override default sensors published, use format "id:publish,id,...", publish can be ommited, default to true, for example "33:1,34,1:0" meaning publish id's 33 and 34, but also read id 1 and don't publish. For more details see [here](https://github.com/jkaberg/byd-hass/blob/main/internal/sensors/sensor_ids.go#L39-L50)  |
 
 ## Home Assistant sensors
 
