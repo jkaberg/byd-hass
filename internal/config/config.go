@@ -40,8 +40,9 @@ type Config struct {
 	ABRPVehicleType string `json:"abrp_vehicle_type"` // ABRP vehicle type for better range estimation
 
 	// Timing intervals (overridable via CLI flags / env vars)
-	MQTTInterval time.Duration `json:"mqtt_interval"` // Interval between MQTT transmissions
-	ABRPInterval time.Duration `json:"abrp_interval"` // Interval between ABRP transmissions
+	MQTTInterval        time.Duration `json:"mqtt_interval"`         // Interval between MQTT transmissions
+	ABRPInterval        time.Duration `json:"abrp_interval"`         // Interval between ABRP transmissions
+	ForceUpdateInterval time.Duration `json:"force_update_interval"` // Force update all sensors at this interval (0 = disabled)
 }
 
 // GetDefaultConfig returns a configuration with sensible defaults

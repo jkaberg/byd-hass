@@ -35,13 +35,17 @@ func main() {
 	logger := setupLogger(cfg.Verbose)
 	setupCustomDNSResolver(logger)
 
-	logger.WithFields(logrus.Fields{
+	logFields := logrus.Fields{
 		"version":   version,
 		"device_id": cfg.DeviceID,
 		"poll":      config.DiplusPollInterval,
 		"abrp_int":  cfg.ABRPInterval,
 		"mqtt_int":  cfg.MQTTInterval,
-	}).Info("Starting BYD-HASS v2")
+	}
+	if cfg.ForceUpdateInterval > 0 {
+		logFields["force_update_int"] = cfg.ForceUpdateInterval
+	}
+	logger.WithFields(logFields).Info("Starting BYD-HASS v2")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -112,6 +116,7 @@ func parseFlags() (*config.Config, bool) {
 
 	mqttIntervalStr := flag.String("mqtt-interval", getEnv("BYD_HASS_MQTT_INTERVAL", ""), "MQTT interval (e.g. 60s)")
 	abrpIntervalStr := flag.String("abrp-interval", getEnv("BYD_HASS_ABRP_INTERVAL", ""), "ABRP interval (e.g. 10s)")
+	forceUpdateIntervalStr := flag.String("force-update-interval", getEnv("BYD_HASS_FORCE_UPDATE_INTERVAL", ""), "Force update all sensors at this interval even if unchanged (e.g. 10m, 0 = disabled)")
 
 	flag.Parse()
 
@@ -133,6 +138,13 @@ func parseFlags() (*config.Config, bool) {
 			cfg.ABRPInterval = d
 		} else if v, err2 := strconv.Atoi(*abrpIntervalStr); err2 == nil && v > 0 {
 			cfg.ABRPInterval = time.Duration(v) * time.Second
+		}
+	}
+	if *forceUpdateIntervalStr != "" {
+		if d, err := time.ParseDuration(*forceUpdateIntervalStr); err == nil && d >= 0 {
+			cfg.ForceUpdateInterval = d
+		} else if v, err2 := strconv.Atoi(*forceUpdateIntervalStr); err2 == nil && v >= 0 {
+			cfg.ForceUpdateInterval = time.Duration(v) * time.Second
 		}
 	}
 

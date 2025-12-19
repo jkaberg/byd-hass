@@ -86,18 +86,21 @@ func Run(
 	sub := messageBus.Subscribe()
 
 	type txState struct {
-		interval time.Duration
-		lastSent time.Time
-		lastSnap *sensors.SensorData
-		sendFn   func(context.Context, *sensors.SensorData, *logrus.Logger) error
-		name     string
+		interval         time.Duration
+		lastSent         time.Time
+		lastForcedUpdate time.Time
+		lastSnap         *sensors.SensorData
+		sendFn           func(context.Context, *sensors.SensorData, *logrus.Logger) error
+		name             string
 	}
 
 	var states []txState
+	now := time.Now()
 	if mqttTx != nil {
 		states = append(states, txState{
-			interval: cfg.MQTTInterval,
-			lastSent: time.Now().Add(-cfg.MQTTInterval),
+			interval:         cfg.MQTTInterval,
+			lastSent:         now.Add(-cfg.MQTTInterval),
+			lastForcedUpdate: now.Add(-cfg.ForceUpdateInterval), // Initialize so forced update triggers immediately on startup
 			sendFn: func(c context.Context, s *sensors.SensorData, l *logrus.Logger) error {
 				return transmitToMQTTAsync(c, mqttTx, s, l)
 			},
@@ -106,8 +109,9 @@ func Run(
 	}
 	if abrpTx != nil {
 		states = append(states, txState{
-			interval: cfg.ABRPInterval,
-			lastSent: time.Now().Add(-cfg.ABRPInterval),
+			interval:         cfg.ABRPInterval,
+			lastSent:         now.Add(-cfg.ABRPInterval),
+			lastForcedUpdate: now.Add(-cfg.ForceUpdateInterval), // Initialize so forced update triggers immediately on startup
 			sendFn: func(c context.Context, s *sensors.SensorData, l *logrus.Logger) error {
 				return transmitToABRPAsync(c, abrpTx, s, l)
 			},
@@ -141,12 +145,24 @@ func Run(
 						interval = computeABRPInterval(latest)
 					}
 
-					if now.Sub(st.lastSent) < interval {
-						continue
+					// Check if forced update interval has elapsed (if enabled)
+					forceUpdate := cfg.ForceUpdateInterval > 0 && now.Sub(st.lastForcedUpdate) >= cfg.ForceUpdateInterval
+
+					// If not forcing an update, check regular interval and change detection
+					if !forceUpdate {
+						if now.Sub(st.lastSent) < interval {
+							continue
+						}
+						if !domain.Changed(st.lastSnap, latest) {
+							continue
+						}
+					} else {
+						// For forced updates, still respect minimum interval to avoid spam
+						if now.Sub(st.lastSent) < interval {
+							continue
+						}
 					}
-					if !domain.Changed(st.lastSnap, latest) {
-						continue
-					}
+
 					if err := st.sendFn(ctx, latest, logger); err != nil {
 						logger.WithError(err).Warn(st.name + " transmit failed")
 						// Ensure we retry even if no data change.
@@ -158,6 +174,10 @@ func Run(
 					} else {
 						st.lastSnap = latest
 						st.lastSent = now
+						if forceUpdate {
+							st.lastForcedUpdate = now
+							logger.WithField("transmitter", st.name).Debug("Forced update transmitted")
+						}
 					}
 				}
 			}

@@ -447,6 +447,8 @@ while true; do
     if [ "\${PROCESS_COUNT:-0}" -eq 0 ]; then
         echo "[\$(date)] Keep-alive not running. Starting it..."
         adb -s "$ADB_SERVER" shell "nohup sh $ADB_KEEPALIVE_SCRIPT_PATH > /dev/null 2>&1 &"
+    elif [ "\${PROCESS_COUNT:-0}" -eq 1 ]; then
+        echo "[\$(date)] Keep-alive already running. Doing nothing..."
     elif [ "\${PROCESS_COUNT:-0}" -gt 1 ]; then
         echo "[\$(date)] Multiple keep-alive processes detected (\$PROCESS_COUNT). Cleaning up..."
         adb -s "$ADB_SERVER" shell "pkill -f $ADB_KEEPALIVE_SCRIPT_NAME"
