@@ -26,14 +26,15 @@ type LocationData struct {
 }
 
 type TermuxLocationProvider struct {
-	logger       *logrus.Logger
-	mu           sync.RWMutex
-	cachedData   *LocationData
-	lastFetch    time.Time
-	cacheTTL     time.Duration
-	fetchTimeout time.Duration
-	ctx          context.Context
-	cancel       context.CancelFunc
+	logger          *logrus.Logger
+	mu              sync.RWMutex
+	cachedData      *LocationData
+	lastFetch       time.Time
+	lastFileModTime time.Time // Track file modification time to detect actual updates
+	cacheTTL        time.Duration
+	fetchTimeout    time.Duration
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 // Create provider with background goroutine
@@ -53,12 +54,19 @@ func NewTermuxLocationProvider(logger *logrus.Logger) *TermuxLocationProvider {
 }
 
 // Read from /storage/emulated/0/bydhass/gps
-func (p *TermuxLocationProvider) fetchFromFile() (*LocationData, error) {
+func (p *TermuxLocationProvider) fetchFromFile() (*LocationData, time.Time, error) {
 	const filePath = "/storage/emulated/0/bydhass/gps"
+
+	// Get file modification time first to detect if file actually changed
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("cannot stat gps file: %w", err)
+	}
+	fileModTime := fileInfo.ModTime()
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read gps file: %w", err)
+		return nil, time.Time{}, fmt.Errorf("cannot read gps file: %w", err)
 	}
 
 	var raw struct {
@@ -67,10 +75,20 @@ func (p *TermuxLocationProvider) fetchFromFile() (*LocationData, error) {
 		Speed     float64 `json:"speed"`
 		Accuracy  float64 `json:"accuracy"`
 		Battery   float64 `json:"battery"`
+		Timestamp *int64  `json:"timestamp,omitempty"` // Optional timestamp from GPS script
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("invalid gps json: %w", err)
+		return nil, time.Time{}, fmt.Errorf("invalid gps json: %w", err)
+	}
+
+	// Use timestamp from JSON if available, otherwise use file modification time
+	var timestamp time.Time
+	if raw.Timestamp != nil {
+		timestamp = time.Unix(*raw.Timestamp, 0)
+	} else {
+		// Fallback to file modification time (more accurate than time.Now())
+		timestamp = fileModTime
 	}
 
 	return &LocationData{
@@ -79,8 +97,8 @@ func (p *TermuxLocationProvider) fetchFromFile() (*LocationData, error) {
 		Speed:     raw.Speed,
 		Accuracy:  raw.Accuracy,
 		Provider:  "termux-file",
-		Timestamp: time.Now(),
-	}, nil
+		Timestamp: timestamp,
+	}, fileModTime, nil
 }
 
 func (p *TermuxLocationProvider) GetLocation() (*LocationData, error) {
@@ -91,7 +109,17 @@ func (p *TermuxLocationProvider) GetLocation() (*LocationData, error) {
 		return nil, fmt.Errorf("no location data available yet")
 	}
 
-	return &(*p.cachedData), nil
+	// Enforce cache TTL - reject stale data
+	if p.cacheTTL > 0 {
+		age := time.Since(p.cachedData.Timestamp)
+		if age > p.cacheTTL {
+			return nil, fmt.Errorf("location data is stale (age: %v, TTL: %v)", age, p.cacheTTL)
+		}
+	}
+
+	// Return a copy to prevent external modification
+	result := *p.cachedData
+	return &result, nil
 }
 
 func (p *TermuxLocationProvider) backgroundLocationFetcher() {
@@ -111,7 +139,7 @@ func (p *TermuxLocationProvider) backgroundLocationFetcher() {
 }
 
 func (p *TermuxLocationProvider) fetchLocationData() {
-	loc, err := p.fetchFromFile()
+	loc, fileModTime, err := p.fetchFromFile()
 	if err != nil {
 		p.logger.WithError(err).Warn("Failed reading GPS file; using default")
 		p.setDefaultLocation()
@@ -119,17 +147,30 @@ func (p *TermuxLocationProvider) fetchLocationData() {
 	}
 
 	p.mu.Lock()
-	p.cachedData = loc
-	p.lastFetch = time.Now()
-	p.mu.Unlock()
+	// Only update cache if file modification time changed (file was actually updated)
+	if fileModTime.After(p.lastFileModTime) || p.lastFileModTime.IsZero() {
+		p.cachedData = loc
+		p.lastFileModTime = fileModTime
+		p.lastFetch = time.Now()
+		p.mu.Unlock()
 
-	p.logger.WithFields(logrus.Fields{
-		"latitude":  loc.Latitude,
-		"longitude": loc.Longitude,
-		"speed":     loc.Speed,
-		"accuracy":  loc.Accuracy,
-		"provider":  loc.Provider,
-	}).Debug("Loaded GPS location from file")
+		p.logger.WithFields(logrus.Fields{
+			"latitude":  loc.Latitude,
+			"longitude": loc.Longitude,
+			"speed":     loc.Speed,
+			"accuracy":  loc.Accuracy,
+			"provider":  loc.Provider,
+			"timestamp": loc.Timestamp,
+			"file_mod":  fileModTime,
+		}).Debug("Loaded GPS location from file")
+	} else {
+		// File hasn't changed, no need to update cache
+		p.mu.Unlock()
+		p.logger.WithFields(logrus.Fields{
+			"last_mod":    p.lastFileModTime,
+			"current_mod": fileModTime,
+		}).Debug("GPS file unchanged, skipping cache update")
+	}
 }
 
 func (p *TermuxLocationProvider) setDefaultLocation() {
@@ -174,4 +215,3 @@ func (p *TermuxLocationProvider) SetFetchTimeout(timeout time.Duration) {
 	defer p.mu.Unlock()
 	p.fetchTimeout = timeout
 }
-

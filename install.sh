@@ -525,12 +525,12 @@ while true; do
                 ABS_LAT=$(awk -v x="$DIFF_LAT" 'BEGIN {print (x<0?-x:x)}')
                 ABS_LON=$(awk -v x="$DIFF_LON" 'BEGIN {print (x<0?-x:x)}')
 
-                # Only publish if moved >0.00001° (~1 m)
+                # Only publish if moved >0.000005° (~0.5 m)
                 ABS_LAT_DEC=$(to_decimal "$ABS_LAT")
                 ABS_LON_DEC=$(to_decimal "$ABS_LON")
 
-                if (( $(echo "$ABS_LAT_DEC < 0.00001" | bc -l) )) && \
-                   (( $(echo "$ABS_LON_DEC < 0.00001" | bc -l) )); then
+                if (( $(echo "$ABS_LAT_DEC < 0.000005" | bc -l) )) && \
+                   (( $(echo "$ABS_LON_DEC < 0.000005" | bc -l) )); then
                         # No significant change → skip publish
                         sleep $INTERVAL
                         continue
@@ -545,16 +545,21 @@ while true; do
         # JSON PAYLOAD
         # -------------------------
 
+        # Get current timestamp (Unix epoch seconds)
+        TIMESTAMP=$(date +%s)
+
         JSON_PAYLOAD=$(jq -n -c \
                 --arg lat "$LAT" \
                 --arg lon "$LON" \
                 --arg spd "$SPD" \
                 --arg acc "$ACC" \
+                --arg ts "$TIMESTAMP" \
                 '{
                         latitude: ($lat|tonumber),
                         longitude: ($lon|tonumber),
                         speed: ($spd|tonumber),
-                        accuracy: ($acc|tonumber)
+                        accuracy: ($acc|tonumber),
+                        timestamp: ($ts|tonumber)
                 }')
 
         echo "$JSON_PAYLOAD" > /storage/emulated/0/bydhass/gps
