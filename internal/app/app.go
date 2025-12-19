@@ -12,6 +12,7 @@ import (
 	"github.com/jkaberg/byd-hass/internal/location"
 	"github.com/jkaberg/byd-hass/internal/sensors"
 	"github.com/jkaberg/byd-hass/internal/transmission"
+	"github.com/jkaberg/byd-hass/internal/wifi"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -56,6 +57,15 @@ func Run(
 
 	messageBus := bus.New()
 	grp, ctx := errgroup.WithContext(ctx)
+
+	// WiFi Monitor ---------------------------------------------------------
+	if cfg.EnableWiFiReenable {
+		grp.Go(func() error {
+			wifiManager := wifi.NewWiFiManager(logger)
+			// Check WiFi every 30 seconds
+			return wifiManager.MonitorWiFi(ctx, 30*time.Second)
+		})
+	}
 
 	// Collector -----------------------------------------------------------
 	grp.Go(func() error {

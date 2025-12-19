@@ -69,6 +69,7 @@ Settings can be supplied as command-line flags or environment variables (prefix 
 | `-abrp-api-key`        | `BYD_HASS_ABRP_API_KEY`      | ABRP API key (optional) |
 | `-abrp-token`          | `BYD_HASS_ABRP_TOKEN`        | ABRP user token (optional) |
 | `-require-abrp-app`    | `BYD_HASS_REQUIRE_ABRP_APP`  | Require ABRP Android app to be running before sending telemetry (default `true`) |
+| `-enable-wifi-reenable` | `BYD_HASS_ENABLE_WIFI_REENABLE` | Automatically re-enable WiFi if it gets disabled (default `false`) |
 | `-device-id`           | `BYD_HASS_DEVICE_ID`         | Unique name for this car (default is auto-generated) |
 | `-verbose`             | `BYD_HASS_VERBOSE`           | Enable extra logging |
 | `-discovery-prefix`    | ―                            | MQTT discovery prefix (default `homeassistant`) |

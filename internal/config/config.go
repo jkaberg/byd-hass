@@ -29,6 +29,13 @@ type Config struct {
 	// or the "BYD_HASS_REQUIRE_ABRP_APP" environment variable.
 	RequireABRPApp bool `json:"require_abrp_app"`
 
+	// WiFi Re-enable
+	// When true, the application will periodically check if WiFi is disabled
+	// and automatically re-enable it. This can be toggled through the
+	// "-enable-wifi-reenable" CLI flag or the "BYD_HASS_ENABLE_WIFI_REENABLE"
+	// environment variable (default: false).
+	EnableWiFiReenable bool `json:"enable_wifi_reenable"`
+
 	// API Configuration
 	DiplusURL       string `json:"diplus_url"`       // Di-Plus API URL
 	ExtendedPolling bool   `json:"extended_polling"` // Use extended sensor polling for more data
@@ -60,9 +67,10 @@ func GetDefaultConfig() *Config {
 		ABRPVehicleType: "byd:*", // Generic BYD vehicle type
 
 		// Default intervals (can be overridden)
-		MQTTInterval:   MQTTTransmitInterval,
-		ABRPInterval:   ABRPTransmitInterval,
-		RequireABRPApp: true,
+		MQTTInterval:       MQTTTransmitInterval,
+		ABRPInterval:       ABRPTransmitInterval,
+		RequireABRPApp:     true,
+		EnableWiFiReenable: false, // WiFi re-enable disabled by default
 	}
 }
 
