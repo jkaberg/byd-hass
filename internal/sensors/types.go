@@ -92,8 +92,8 @@ type SensorData struct {
 	ACStatus            *float64 `json:"ac_status,omitempty"`
 	DriverACTemperature *float64 `json:"driver_ac_temperature,omitempty"`
 	FanSpeedLevel       *float64 `json:"fan_speed_level,omitempty"`
-	ACBlowingMode       *float64 `json:"ac_blowing_mode,omitempty"`
 	ACCirculationMode   *float64 `json:"ac_circulation_mode,omitempty"`
+	ACBlowingMode       *float64 `json:"ac_blowing_mode,omitempty"`
 	Weather             *float64 `json:"weather,omitempty"`
 	FootwellLights      *float64 `json:"footwell_lights,omitempty"`
 
@@ -267,7 +267,7 @@ var AllSensors = []SensorDefinition{
 	{77, "ACStatus", "空调状态", "AC Status", "sensor", "", "", 1},
 	{78, "FanSpeedLevel", "风量档位", "Fan Speed Level", "sensor", "", "", 1},
 	{79, "ACCirculationMode", "空调循环方式", "AC Circulation Mode", "sensor", "", "", 1},
-	{80, "AC Outlet Mode", "空调出风模式", "AC Outlet Mode", "sensor", "", "", 1},
+	{80, "ACBlowingMode", "空调出风模式", "AC Blowing Mode", "sensor", "", "", 1},
 	{81, "DriverDoor", "主驾车门", "Driver Door", "binary_sensor", "", "", 1},
 	{82, "PassengerDoor", "副驾车门", "Passenger Door", "binary_sensor", "safety", "", 1},
 	{83, "LeftRearDoor", "左后车门", "Left Rear Door", "binary_sensor", "safety", "", 1},
@@ -306,6 +306,14 @@ var AllSensors = []SensorDefinition{
 	{1008, "BluetoothStatus", "上次哨兵触发图像", "Bluetooth Status", "sensor", "", "", 1},
 	{1009, "BluetoothSignalStrength", "上次录像开始时间", "Bluetooth Signal Strength", "sensor", "timestamp", "", 1},
 	{1101, "WirelessADBSwitch", "上次录像结束时间", "Wireless ADB Switch", "binary_sensor", "timestamp", "", 1},
+	
+	{2001, "AIPersonConfidence", "AI识别人可信度", "AI Person Confidence", "binary_sensor", "", "", 1},
+	{2002, "AIVehicleConfidence", "AI识别车可信度", "AI Vehicle Confidence", "binary_sensor", "", "", 1},
+	{2003, "LastSentryTriggerTime", "上次哨兵触发时间", "Last Sentry Trigger Time", "sensor", "timestamp", "", 1},
+	{2004, "LastSentryTriggerImage", "上次哨兵触发画面", "Last Sentry Trigger Image", "sensor", "timestamp", "", 1},
+	{2005, "LastVideoStartTime", "上次录像文件开始时间", "Last Video Start Time", "sensor", "timestamp", "", 1},
+	{2006, "LastVideoEndTime", "上次录像文件结束时间", "Last Video End Time", "sensor", "timestamp", "", 1},
+	{2007, "LastVideoPath.", "上次录像路径", "Last Video Path.", "sensor", "", "", 1},
 }
 
 // GetSensorByID returns a sensor definition by its ID
